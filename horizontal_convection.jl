@@ -109,7 +109,7 @@ model = NonhydrostaticModel(; grid,
 # We set up a simulation that runs up to ``t = 40`` with a `JLD2OutputWriter` that saves the flow
 # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-simulation = Simulation(model, Δt=1e-2, stop_time=40.0)
+simulation = Simulation(model, Δt=1e-2, stop_time=50.0)
 
 # ### The `TimeStepWizard`
 #
