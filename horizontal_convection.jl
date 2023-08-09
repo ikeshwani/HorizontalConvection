@@ -42,7 +42,7 @@ underlying_grid = RectilinearGrid(size = (Nx, Nz),
 h₀ = 0.75*H
 width = 0.05*Lx
 hill_1(x) = h₀ * exp(-(x+Lx/4)^2 / 2width^2)
-hill_2(x) = h₀ * exp(-(x-Lx/4)^2 / 2width^2)
+hill_2(x) = 0.75*h₀ * exp(-(x-Lx/4)^2 / 2width^2)
 bottom(x,y) = - H + hill_1(x) + hill_2(x)
 
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom))
