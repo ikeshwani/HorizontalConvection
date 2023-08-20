@@ -41,7 +41,7 @@ underlying_grid = RectilinearGrid(size = (Nx, Nz),
                    topology = (Bounded, Flat, Bounded))
 h₀ = 0.75*H
 width = 0.05*Lx
-hill_1(x) = h₀ * exp(-(x+Lx/4)^2 / 2width^2)
+hill_1(x) = h₀ * exp(-(x+Lx/8)^2 / 2width^2)
 hill_2(x) = 0.75*h₀ * exp(-(x-Lx/4)^2 / 2width^2)
 bottom(x,y) = - H + hill_1(x) + hill_2(x)
 
@@ -110,7 +110,7 @@ model = NonhydrostaticModel(; grid,
 # We set up a simulation that runs up to ``t = 40`` with a `JLD2OutputWriter` that saves the flow
 # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-simulation = Simulation(model, Δt=1e-2, stop_time=50.0)
+simulation = Simulation(model, Δt=1e-2, stop_time=100.0)
 
 # ### The `TimeStepWizard`
 #
