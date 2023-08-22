@@ -44,8 +44,7 @@ grid = RectilinearGrid(size = (Nx, Nz),
 # ```math
 # b(x, z = 0, t) = - b_* \cos (2 \pi x / L_x) \, ,
 # ```
-# while zero-flux boundary conditions are imposed on all other boundaries. We use free-slip 
-# boundary conditions on ``u`` and ``w`` everywhere.
+# while zero-flux boundary conditions are imposed on all other boundaries (by default).
 
 b★ = 1.0
 
@@ -78,8 +77,8 @@ nothing # hide
 
 # ## Model instantiation
 #
-# We instantiate the model with the fifth-order WENO advection scheme, a 3rd order
-# Runge-Kutta time-stepping scheme, and a `BuoyancyTracer`.
+# We instantiate the model with a Runge-Kutta time-stepping scheme and a `BuoyancyTracer`,
+# but no advection scheme.
 
 model = NonhydrostaticModel(; grid,
                             advection = nothing,
@@ -97,8 +96,8 @@ simulation = Simulation(model, Δt=0.1, stop_time=1000.0)
 
 # ### The `TimeStepWizard`
 #
-# The `TimeStepWizard` manages the time-step adaptively. Since there is no advection in this problem,
-# we set the Courant-Freidrichs-Lewy (CFL) number to Inf since it is irrelevant. A maximum non-dimentional timestep of
+# The `TimeStepWizard` normally manages the time-step adaptively in response to the flow. Since there is no advection in this problem,
+# the Courant-Freidrichs-Lewy (CFL) number is irrelevant to we set its maximum to Inf. A maximum non-dimentional timestep of
 # well below 1 ensures that the diffusive CFL condition is satisfied.
 
 wizard = TimeStepWizard(cfl=Inf, max_change=1.25, max_Δt=0.1)
@@ -128,8 +127,10 @@ nothing # hide
 # We create a `JLD2OutputWriter` that saves the speed, and the vorticity. Because we want
 # to post-process buoyancy and compute the buoyancy variance dissipation (which is proportional
 # to ``|\boldsymbol{\nabla} b|^2``) we use the `with_halos = true`. This way, the halos for
-# the fields are saved and thus when we load them as fields they will come with the proper
-# boundary conditions.
+# the fields [should be] saved and thus when we load them as fields they will come with the proper
+# boundary conditions. AS SHOWN BELOW, HOWEVER, THIS FUNCTIONALITY APPEARS TO BE BROKEN! We discuss
+# this apparent bug in https://github.com/CliMA/Oceananigans.jl/issues/3224.
+# 
 #
 # We then add the `JLD2OutputWriter` to the `simulation`.
 
@@ -150,7 +151,8 @@ run!(simulation)
 #
 # We animate the results by loading the saved output, extracting data for the iterations we ended
 # up saving at, and ploting the saved fields. From the saved buoyancy field we compute the 
-# buoyancy dissipation, ``\chi = \kappa |\boldsymbol{\nabla} b|^2``, and plot that also.
+# buoyancy dissipation, ``\chi = \kappa |\boldsymbol{\nabla} b|^2``, offline and compare that
+# to the online calculation. 
 #
 # To start we load the saved fields are `FieldTimeSeries` and prepare for animating the flow by
 # creating coordinate arrays that each field lives on.
@@ -256,8 +258,10 @@ t = b_timeseries.times
 Equilibration_ratio, Equilibration_ratio_offline = zeros(length(t)), zeros(length(t))
 nothing # hide
 
-# Now we can loop over the fields in the `FieldTimeSeries`, compute kinetic energy and ``Nu``,
-# and plot. We make use of `Integral` to compute the volume integral of fields over our domain.
+# Now we can loop over the fields in the `FieldTimeSeries`, compute the equilibration ratio,
+# i.e. the ratio of the instantaneous buoyancy dissipation rate from the numerical solution to the
+# analytical solution for the equilibrium boundary value problem.
+# We make use of `Integral` to compute the volume integral of fields over our domain.
 
 for i = 1:length(t)
     χ_diff_Oceananigans = Field(Integral(χ_timeseries[i] / (Lx * H)))
