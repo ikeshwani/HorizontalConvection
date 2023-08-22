@@ -46,9 +46,9 @@ grid = RectilinearGrid(size = (Nx, Nz),
 # while zero-flux boundary conditions are imposed on all other boundaries. We use free-slip 
 # boundary conditions on ``u`` and ``w`` everywhere.
 
-b★ = 2.0
+b★ = 1.0
 
-@inline bˢ(x, y, t, p) = p.b★ * sin(π * x / (p.Lx/2))
+@inline bˢ(x, y, t, p) = - p.b★ * cos(π * x / (p.Lx/2))
 
 b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(bˢ, parameters=(; b★, Lx)))
 
@@ -100,7 +100,7 @@ model = NonhydrostaticModel(; grid,
 # We set up a simulation that runs up to ``t = 40`` with a `JLD2OutputWriter` that saves the flow
 # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-simulation = Simulation(model, Δt=1e-2, stop_time=30.0)
+simulation = Simulation(model, Δt=0.1, stop_time=100.0)
 
 # ### The `TimeStepWizard`
 #
@@ -108,9 +108,9 @@ simulation = Simulation(model, Δt=1e-2, stop_time=30.0)
 # (CFL) number close to `0.75` while ensuring the time-step does not increase beyond the 
 # maximum allowable value for numerical stability.
 
-wizard = TimeStepWizard(cfl=0.75, max_change=1.2, max_Δt=1e-1)
+wizard = TimeStepWizard(cfl=1e3, max_change=1.25, max_Δt=0.1)
 
-simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(50))
+simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(100))
 
 # ### A progress messenger
 #
@@ -120,7 +120,7 @@ progress(sim) = @printf("i: % 6d, sim time: % 1.3f, wall time: % 10s, Δt: % 1.4
                         iteration(sim), time(sim), prettytime(sim.run_wall_time),
                         sim.Δt, AdvectiveCFL(sim.Δt)(sim.model), DiffusiveCFL(sim.Δt)(sim.model))
 
-simulation.callbacks[:progress] = Callback(progress, IterationInterval(50))
+simulation.callbacks[:progress] = Callback(progress, IterationInterval(100))
 
 # ### Output
 #
@@ -149,7 +149,7 @@ nothing # hide
 saved_output_filename = "diffusive_convection.jld2"
 
 simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ),
-                                                      schedule = TimeInterval(0.5),
+                                                      schedule = TimeInterval(5),
                                                       filename = saved_output_filename,
                                                       with_halos = true,
                                                       overwrite_existing = true)
@@ -209,7 +209,7 @@ bₙ = @lift interior(b_timeseries[$n], :, 1, :)
 χₙ = @lift interior(χ_timeseries[$n], :, 1, :)
 
 slim = 0.6
-blim = 0.6
+blim = 1
 ζlim = 9
 χlim = 0.025
 
@@ -259,7 +259,7 @@ Colorbar(fig[5, 2], hm_χ)
 
 frames = 1:length(times)
 
-record(fig, "horizontal_convection.mp4", frames, framerate=8) do i
+record(fig, "diffusive_convection.mp4", frames, framerate=8) do i
     msg = string("Plotting frame ", i, " of ", frames[end])
     print(msg * " \r")
     n[] = i
@@ -282,29 +282,22 @@ nothing # hide
 
 t = b_timeseries.times
 
-kinetic_energy, Nu = zeros(length(t)), zeros(length(t))
+Equilibration_ratio = zeros(length(t))
 nothing # hide
 
 # Now we can loop over the fields in the `FieldTimeSeries`, compute kinetic energy and ``Nu``,
 # and plot. We make use of `Integral` to compute the volume integral of fields over our domain.
 
 for i = 1:length(t)
-    ke = Field(Integral(1/2 * s_timeseries[i]^2 / (Lx * H)))
-    compute!(ke)
-    kinetic_energy[i] = ke[1, 1, 1]
-    
     χ_diff_Oceananigans = Field(Integral(χ_timeseries[i] / (Lx * H)))
-    compute!(χ)
+    compute!(χ_diff_Oceananigans)
 
     Equilibration_ratio[i] = χ_diff_Oceananigans[1, 1, 1] / χ_diff_analytical # should start at zero and reach 1 when fully equilibrated
 end
 
-fig = Figure(resolution = (850, 450))
+fig = Figure(resolution = (850, 300))
  
-ax_KE = Axis(fig[1, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"KE $ / (L_x b_*)$")
-lines!(ax_KE, t, kinetic_energy; linewidth = 3)
-
-ax_equil = Axis(fig[2, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"\chi_{Oceananigans} / \chi_{Analytical}")
+ax_equil = Axis(fig[1, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"\chi_{Oceananigans} / \chi_{Analytical}")
 lines!(ax_equil, t, Equilibration_ratio; linewidth = 3)
 
 current_figure() # hide
