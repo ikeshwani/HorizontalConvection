@@ -272,39 +272,9 @@ nothing #hide
 # At higher Rayleigh numbers the flow becomes much more vigorous. See, for example, an animation
 # of the voricity of the fluid at ``Ra = 10^{12}`` on [vimeo](https://vimeo.com/573730711). 
 
-# ### The Nusselt number
-#
-# Often we are interested on how much the flow enhances mixing. This is quantified by the
-# Nusselt number, which measures how much the flow enhances mixing compared if only diffusion
-# was in operation. The Nusselt number is given by
-#
-# ```math
-# Nu = \frac{\langle \chi \rangle}{\langle \chi_{\rm diff} \rangle} \, ,
-# ```
-#
-# where angle brackets above denote both a volume and time average and ``\chi_{\rm diff}`` is
-# the buoyancy dissipation that we get without any flow, i.e., the buoyancy dissipation associated
-# with the buoyancy distribution that satisfies
-#
-# ```math
-# \kappa \nabla^2 b_{\rm diff} = 0 \, ,
-# ```
-#
-# with the same boundary conditions same as our setup. In this case, we can readily find that
-#
-# ```math
-# b_{\rm diff}(x, z) = b_s(x) \frac{\cosh \left [2 \pi (H + z) / L_x \right ]}{\cosh(2 \pi H / L_x)} \, ,
-# ```
-# where $b_s(x)$ is the surface boundary condition. The diffusive solution implies 
-# ``\langle \chi_{\rm diff} \rangle = \kappa b_*^2 \pi \tanh(2 \pi Η /Lx) / (L_x H)``.
-#
-# We use the loaded `FieldTimeSeries` to compute the Nusselt number from buoyancy and the volume
-# average kinetic energy of the fluid.
-#
-# First we compute the diffusive buoyancy dissipation, ``\chi_{\rm diff}`` (which is just a
-# scalar):
+# ### Validation of the diffusive solution in Oceananigans.jl
 
-χ_diff = κ * b★^2 * π * tanh(2π * H / Lx) / (Lx * H)
+χ_diff_analytical = κ * b★^2 * π * tanh(2π * H / Lx) / (Lx * H)
 nothing # hide
 
 # We recover the time from the saved `FieldTimeSeries` and construct two empty arrays to store
@@ -323,10 +293,10 @@ for i = 1:length(t)
     compute!(ke)
     kinetic_energy[i] = ke[1, 1, 1]
     
-    χ = Field(Integral(χ_timeseries[i] / (Lx * H)))
+    χ_diff_Oceananigans = Field(Integral(χ_timeseries[i] / (Lx * H)))
     compute!(χ)
 
-    Nu[i] = χ[1, 1, 1] / χ_diff
+    Equilibration_ratio[i] = χ_diff_Oceananigans[1, 1, 1] / χ_diff_analytical # should start at zero and reach 1 when fully equilibrated
 end
 
 fig = Figure(resolution = (850, 450))
@@ -334,8 +304,8 @@ fig = Figure(resolution = (850, 450))
 ax_KE = Axis(fig[1, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"KE $ / (L_x b_*)$")
 lines!(ax_KE, t, kinetic_energy; linewidth = 3)
 
-ax_Nu = Axis(fig[2, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"Nu")
-lines!(ax_Nu, t, Nu; linewidth = 3)
+ax_equil = Axis(fig[2, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"\chi_{Oceananigans} / \chi_{Analytical}")
+lines!(ax_equil, t, Equilibration_ratio; linewidth = 3)
 
 current_figure() # hide
 fig
