@@ -258,7 +258,7 @@ end
 
 fig = Figure(resolution = (850, 350))
  
-ax_equil = Axis(fig[1, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"\chi_{Oceananigans} / \chi_{Analytical}")
+ax_equil = Axis(fig[1, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"\langle \chi_{Oceananigans} \rangle / \langle \chi_{Analytical} \rangle")
 lines!(ax_equil, t, Equilibration_ratio; linewidth = 3)
 save("equilibration_ratio.png", fig, px_per_unit = 2)
 current_figure() # hide
