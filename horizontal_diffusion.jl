@@ -211,12 +211,12 @@ fig[1, :] = Label(fig, title, fontsize=24, tellwidth=false)
 hm_b = heatmap!(ax_b, xc, zc, bₙ;
                 colorrange = (-blim, blim),
                 colormap = :thermal)
-Colorbar(fig[3, 2], hm_b)
+Colorbar(fig[2, 2], hm_b)
 
 hm_χ = heatmap!(ax_χ, xc, zc, χₙ;
                 colorrange = (0, χlim),
                 colormap = :dense)
-Colorbar(fig[5, 2], hm_χ)
+Colorbar(fig[3, 2], hm_χ)
 
 # And, finally, we record a movie.
 
@@ -256,10 +256,10 @@ for i = 1:length(t)
     Equilibration_ratio[i] = χ_diff_Oceananigans[1, 1, 1] / χ_diff_analytical # should start at zero and reach 1 when fully equilibrated
 end
 
-fig = Figure(resolution = (850, 300))
+fig = Figure(resolution = (850, 350))
  
 ax_equil = Axis(fig[1, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"\chi_{Oceananigans} / \chi_{Analytical}")
 lines!(ax_equil, t, Equilibration_ratio; linewidth = 3)
-
+save("equilibration_ratio.png", fig, px_per_unit = 2)
 current_figure() # hide
 fig
