@@ -278,7 +278,7 @@ ax_equil = Axis(
   xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"$\langle \chi_{Oceananigans} \rangle / \langle \chi_{Analytical} \rangle$ (online)",
   limits=((0,nothing), (0, 10))
 )
-hlines!(ax_equil, [1], color = :black)
+hlines!(ax_equil, [1], color = :black, linestyle = :dash)
 lines!(ax_equil, t, Equilibration_ratio; linewidth = 3)
 
 
@@ -287,7 +287,7 @@ ax_equil_offline = Axis(
   xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"$\langle \chi_{Oceananigans} \rangle / \langle \chi_{Analytical} \rangle$ (offline)",
   limits=((0,nothing), (0, 10))
 )
-hlines!(ax_equil, [1], color = :black)
+hlines!(ax_equil_offline, [1], color = :black, linestyle = :dash)
 lines!(ax_equil_offline, t, Equilibration_ratio_offline; linewidth = 3)
 
 save("equilibration_ratio.png", fig, px_per_unit = 2)
