@@ -122,7 +122,7 @@ simulation.callbacks[:progress] = Callback(progress, IterationInterval(100))
 # input:
 
 b = model.tracers.b        # unpack buoyancy `Field`
-
+χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
 nothing # hide
 
 # We create a `JLD2OutputWriter` that saves the speed, and the vorticity. Because we want
@@ -135,7 +135,7 @@ nothing # hide
 
 saved_output_filename = "horizontal_diffusion.jld2"
 
-simulation.output_writers[:fields] = JLD2OutputWriter(model, (; b),
+simulation.output_writers[:fields] = JLD2OutputWriter(model, (; b, χ),
                                                       schedule = TimeInterval(5),
                                                       filename = saved_output_filename,
                                                       with_halos = true,
@@ -164,6 +164,7 @@ saved_output_filename = "horizontal_diffusion.jld2"
 
 ## Open the file with our data
 b_timeseries = FieldTimeSeries(saved_output_filename, "b")
+χ_timeseries = FieldTimeSeries(saved_output_filename, "χ")
 
 times = b_timeseries.times
 
@@ -171,11 +172,11 @@ times = b_timeseries.times
 xc, yc, zc = nodes(b_timeseries[1])
 nothing # hide
 
-χ_timeseries = deepcopy(b_timeseries)
+χ_timeseries_offline = deepcopy(b_timeseries)
 
 for i in 1:length(times)
   bᵢ = b_timeseries[i]
-  χ_timeseries[i] .= @at (Center, Center, Center) κ * (∂x(bᵢ)^2 + ∂z(bᵢ)^2)
+  χ_timeseries_offline[i] .= @at (Center, Center, Center) κ * (∂x(bᵢ)^2 + ∂z(bᵢ)^2)
 end
 
 # Now we're ready to animate using Makie.
@@ -188,6 +189,7 @@ title = @lift @sprintf("t=%1.2f", times[$n])
 
 bₙ = @lift interior(b_timeseries[$n], :, 1, :)
 χₙ = @lift interior(χ_timeseries[$n], :, 1, :)
+χₙ_offline = @lift interior(χ_timeseries_offline[$n], :, 1, :)
 
 blim = 1
 χlim = 0.025
@@ -198,13 +200,16 @@ axis_kwargs = (xlabel = L"x / H",
                aspect = Lx / H,
                titlesize = 20)
 
-fig = Figure(resolution = (600, 600))
+fig = Figure(resolution = (600, 1050))
 
 ax_b = Axis(fig[2, 1];
             title = L"buoyancy, $b / b_*$", axis_kwargs...)
 
 ax_χ = Axis(fig[3, 1];
-            title = L"buoyancy dissipation, $κ |\mathbf{\nabla}b|^2 \, (L_x / {b_*}^5)^{1/2}$", axis_kwargs...)
+            title = L"buoyancy dissipation, $κ |\mathbf{\nabla}b|^2 \, (L_x / {b_*}^5)^{1/2}$ (online)", axis_kwargs...)
+
+ax_χ_offline = Axis(fig[4, 1];
+            title = L"buoyancy dissipation, $κ |\mathbf{\nabla}b|^2 \, (L_x / {b_*}^5)^{1/2}$ (offline)", axis_kwargs...)
 
 fig[1, :] = Label(fig, title, fontsize=24, tellwidth=false)
 
@@ -217,6 +222,11 @@ hm_χ = heatmap!(ax_χ, xc, zc, χₙ;
                 colorrange = (0, χlim),
                 colormap = :dense)
 Colorbar(fig[3, 2], hm_χ)
+
+hm_χ_offline = heatmap!(ax_χ_offline, xc, zc, χₙ_offline;
+                colorrange = (0, χlim),
+                colormap = :dense)
+Colorbar(fig[4, 2], hm_χ_offline)
 
 # And, finally, we record a movie.
 
@@ -243,7 +253,7 @@ nothing # hide
 
 t = b_timeseries.times
 
-Equilibration_ratio = zeros(length(t))
+Equilibration_ratio, Equilibration_ratio_offline = zeros(length(t)), zeros(length(t))
 nothing # hide
 
 # Now we can loop over the fields in the `FieldTimeSeries`, compute kinetic energy and ``Nu``,
@@ -253,13 +263,33 @@ for i = 1:length(t)
     χ_diff_Oceananigans = Field(Integral(χ_timeseries[i] / (Lx * H)))
     compute!(χ_diff_Oceananigans)
 
-    Equilibration_ratio[i] = χ_diff_Oceananigans[1, 1, 1] / χ_diff_analytical # should start at zero and reach 1 when fully equilibrated
-end
+    χ_diff_Oceananigans_offline = Field(Integral(χ_timeseries_offline[i] / (Lx * H)))
+    compute!(χ_diff_Oceananigans_offline)
 
-fig = Figure(resolution = (850, 350))
+    Equilibration_ratio[i] = χ_diff_Oceananigans[1, 1, 1] / χ_diff_analytical # should start at zero and reach 1 when fully equilibrated
+    Equilibration_ratio_offline[i] = χ_diff_Oceananigans_offline[1, 1, 1] / χ_diff_analytical # should start at zero and reach 1 when fully equilibrated
+
+  end
+
+fig = Figure(resolution = (850, 600))
  
-ax_equil = Axis(fig[1, 1], xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"\langle \chi_{Oceananigans} \rangle / \langle \chi_{Analytical} \rangle")
+ax_equil = Axis(
+  fig[1, 1],
+  xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"$\langle \chi_{Oceananigans} \rangle / \langle \chi_{Analytical} \rangle$ (online)",
+  limits=((0,nothing), (0, 10))
+)
+hlines!(ax_equil, [1], color = :black)
 lines!(ax_equil, t, Equilibration_ratio; linewidth = 3)
+
+
+ax_equil_offline = Axis(
+  fig[2, 1],
+  xlabel = L"t \, (b_* / L_x)^{1/2}", ylabel = L"$\langle \chi_{Oceananigans} \rangle / \langle \chi_{Analytical} \rangle$ (offline)",
+  limits=((0,nothing), (0, 10))
+)
+hlines!(ax_equil, [1], color = :black)
+lines!(ax_equil_offline, t, Equilibration_ratio_offline; linewidth = 3)
+
 save("equilibration_ratio.png", fig, px_per_unit = 2)
 current_figure() # hide
 fig
