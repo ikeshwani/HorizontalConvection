@@ -173,7 +173,7 @@ nothing # hide
 # We then add the `JLD2OutputWriter` to the `simulation`.
 
 
-simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ),
+simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ, χ),
                                                       schedule = TimeInterval(0.5),
                                                       filename = filenames,
                                                       with_halos = true,
