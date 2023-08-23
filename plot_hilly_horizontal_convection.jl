@@ -4,7 +4,7 @@ using Oceananigans.Fields
 using Oceananigans.AbstractOperations: volume
 using Statistics
 
-saved_output_filename = "horizontal_convection.jld2"
+saved_output_filename = "turbulent_convection_hills.jld2"
 
 s_timeseries = FieldTimeSeries(saved_output_filename, "s")
 b_timeseries = FieldTimeSeries(saved_output_filename, "b")
@@ -69,26 +69,32 @@ times_turb = b_timeseries_turbulent.times
 #χₙ_diffusive = @lift interior(χ_timeseries_diffusive[$n], :, 1, :)
 #χₙ_turbulent = @lift interior(χ_timeseries_turbulent[$n], :, 1, :)
 
+χ_diffusive_int = zeros(size(times_diff))
+χ_turbulent_int = zeros(size(times_turb))
 
 for i = 1:length(times_diff)
-    χ_diff_diffusive = Field(Integral(χ_timeseries_diffusive[i]))
-    compute!(χ_diff_diffusive)
+    χ_diffusive_int_snapshot = Field(Integral(χ_timeseries_diffusive[i]))
+    compute!(χ_diffusive_int_snapshot)
+    χ_diffusive_int[i] = χ_diffusive_int_snapshot[1,1,1]
 
-    χ_diff_turbulent = Field(Integral(χ_timeseries_turbulent[i]))
-    compute!(χ_diff_turbulent)
-    
+    χ_turbulent_int_snapshot = Field(Integral(χ_timeseries_turbulent[i]))
+    compute!(χ_turbulent_int_snapshot)
+    χ_turbulent_int[i] = χ_turbulent_int_snapshot[1,1,1]
 end
 
+Nu = χ_turbulent_int ./ χ_diffusive_int
 
 #lets plot the buoyancy dissipation over time for each scheme
 
-
-fig = Figure(resolution = (600,400))
+fig = Figure(resolution = (500,800))
 ax_diff = Axis(fig[1,1], xlabel= L"t \, (b_* / L_x) ^{1/2}", ylabel = "χ Diffusive", title="Diffusive Buoyancy Dissipation vs Time")
-lines!(ax_diff, times_diff, χ_diff_diffusive)
+lines!(ax_diff, times_diff, χ_diffusive_int)
 
 ax_turb = Axis(fig[2, 1], xlabel= L"t \, (b_* / L_x) ^{1/2}", ylabel = "χ Turbulent", title = "Turbulent Buoyancy Dissipation vs Time")
-lines!(ax_turb, times_turb, χ_diff_turbulent)
+lines!(ax_turb, times_turb, χ_turbulent_int)
+
+ax_Nu = Axis(fig[3, 1], xlabel= L"t \, (b_* / L_x) ^{1/2}", ylabel = L"Nu $= \frac{\langle χ_{Turb} \rangle }{\langle χ_{Diff} \rangle}$", title = "Nusselt number vs Time", limits=((0, nothing), (0, nothing)))
+lines!(ax_Nu, times_turb, Nu)
 
 current_figure()
 fig
