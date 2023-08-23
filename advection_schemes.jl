@@ -154,6 +154,9 @@ simulation.callbacks[:progress] = Callback(progress, IterationInterval(50))
 u, v, w = model.velocities # unpack velocity `Field`s
 b = model.tracers.b        # unpack buoyancy `Field`
 
+χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
+
+
 ## total flow speed
 s = @at (Center, Center, Center) sqrt(u^2 + w^2)
 
