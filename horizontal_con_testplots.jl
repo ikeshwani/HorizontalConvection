@@ -66,8 +66,8 @@ b_timeseries_turbulent = FieldTimeSeries("turbulent_convection_hills.jld2", "b")
 times_turb = b_timeseries_turbulent.times
 χ_timeseries_turbulent = FieldTimeSeries("turbulent_convection_hills.jld2", "χ")
 
-#χₙ_diffusive = @lift interior(χ_timeseries_diffusive[$n], :, 1, :)
-#χₙ_turbulent = @lift interior(χ_timeseries_turbulent[$n], :, 1, :)
+χₙ_diffusive = @lift interior(χ_timeseries_diffusive[$n], :, 1, :)
+χₙ_turbulent = @lift interior(χ_timeseries_turbulent[$n], :, 1, :)
 
 
 for i = 1:length(times_diff)
