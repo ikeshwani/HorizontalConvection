@@ -154,6 +154,9 @@ simulation.callbacks[:progress] = Callback(progress, IterationInterval(50))
 u, v, w = model.velocities # unpack velocity `Field`s
 b = model.tracers.b        # unpack buoyancy `Field`
 
+χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
+
+
 ## total flow speed
 s = @at (Center, Center, Center) sqrt(u^2 + w^2)
 
@@ -170,7 +173,7 @@ nothing # hide
 # We then add the `JLD2OutputWriter` to the `simulation`.
 
 
-simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ),
+simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ, χ),
                                                       schedule = TimeInterval(0.5),
                                                       filename = filenames,
                                                       with_halos = true,
