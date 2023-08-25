@@ -20,7 +20,11 @@ b_int = interior(b_timeseries)
 
 b_mean = mean(b_int, dims =(1,2,3))[1,1,1,:]
 
-lines(times, b_mean)
+fig_buoy1 = Figure(resolution = (600, 600))
+ax_buoy1 = Axis(fig_buoy1[1,1], xlabel = "Time", ylabel= "Buoyancy (b(t))", title = "Buoyancy Averaged over 3 Dimensions versus Time")
+lines!(ax_buoy1, times, b_mean)
+ax_heat1 = Axis(fig_buoy1[2,1], xlabel = "Time", ylabel = "Depth (z)", title = "Heatmap of Buoyancy Averaged Over x & y (b(z)) versus Time")
+
 
 #Create heatmap for bouyancy averaged over x&y (only dependent on z) vs time
 
@@ -30,8 +34,8 @@ b_mean_x = mean(b_int, dims = (1, 2))[1,1,:,:]
 b_mean_x_perm = permutedims(b_mean_x, (2,1))
 
 #create a heatmap times on the x-axis, depth on y-axis
-heatmap(times, zc, b_mean_x_perm)
-
+heatmap!(ax_heat1, times, zc, b_mean_x_perm)
+fig_buoy1
 #Now recreate these graphs, but replace the zeros in b_int with NaNs before taking the mean
 
 b_int = replace(b_int, NaN => 0.0)
@@ -43,7 +47,11 @@ using NaNStatistics
 
 b_nans_mean = nanmean(b_nans, dims = (1,2,3))[1,1,1,:]
 
-lines(times, b_nans_mean)
+fig_buoy2 = Figure(resolution=(600,600))
+ax_buoy2 = Axis(fig_buoy2[1,1], xlabel="Times", ylabel="Buoyancy (b(t))", title = "Corrected Buoyancy Averaged Over 3D Versus Time")
+lines!(ax_buoy2, times, b_nans_mean)
+ax_heat2 = Axis(fig_buoy2[2,1], xlabel="Times", ylabel="Buoyancy b(z)", title = "Corrected Buoyancy Averaged over xy Versus Time")
+
 
 #now create heatmap following the steps before
 
@@ -51,8 +59,8 @@ b_nans_meanx = nanmean(b_nans, dims=(1,2))[1,1,:,:]
 
 b_nans_meanx_perm = permutedims(b_nans_meanx, (2,1))
 
-heatmap(times, zc, b_nans_meanx_perm)
-
+heatmap!(ax_heat2, times, zc, b_nans_meanx_perm)
+fig_buoy2
 #Now that we have run an experiment with the two advection schemes 
 # turbulent and diffusive we can analyze those to plot the Nusselt Number
 
