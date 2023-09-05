@@ -10,6 +10,8 @@ s_timeseries = FieldTimeSeries(saved_output_filename, "s")
 b_timeseries = FieldTimeSeries(saved_output_filename, "b")
 ζ_timeseries = FieldTimeSeries(saved_output_filename, "ζ")
 
+xc, yc, zc = nodes(b_timeseries[1])
+
 times = b_timeseries.times
 
 #before replacing 0 buoyancy values with NaNs we have
@@ -74,8 +76,8 @@ b_timeseries_turbulent = FieldTimeSeries("turbulent_convection_hills.jld2", "b")
 times_turb = b_timeseries_turbulent.times
 χ_timeseries_turbulent = FieldTimeSeries("turbulent_convection_hills.jld2", "χ")
 
-χₙ_diffusive = @lift interior(χ_timeseries_diffusive[$n], :, 1, :)
-χₙ_turbulent = @lift interior(χ_timeseries_turbulent[$n], :, 1, :)
+#χₙ_diffusive = @lift interior(χ_timeseries_diffusive[$n], :, 1, :)
+#χₙ_turbulent = @lift interior(χ_timeseries_turbulent[$n], :, 1, :)
 
 χ_diffusive_int = zeros(size(times_diff))
 χ_turbulent_int = zeros(size(times_turb))
@@ -107,4 +109,30 @@ lines!(ax_Nu, times_turb, Nu)
 current_figure()
 fig
 
+#energy plots!
 
+ke_timeseries = FieldTimeSeries("turbulent_convection_hills.jld2", "ke")
+pe_timeseries = FieldTimeSeries("turbulent_convection_hills.jld2", "pe")
+
+kinetic_energy = zeros(size(times))
+potential_energy = zeros(size(times))
+
+for i = 1:length(times)
+    ke_snapshot = Field(Integral(ke_timeseries[i]))
+    compute!(ke_snapshot)
+    kinetic_energy[i] = ke_snapshot[1,1,1]
+
+    pe_snapshot = Field(Integral(pe_timeseries[i]))
+    compute!(pe_snapshot)
+    potential_energy[i] = pe_snapshot[1,1,1]
+end
+
+fig_energy = Figure(resolution = (500,800))
+ax_KE = Axis(fig_energy[1,1], xlabel = L"t \, (b_* / L_x) ^{1/2}", ylabel= "KE", title = "KE versus Time for Turbulent Hilly Model")
+lines!(ax_KE, times, kinetic_energy)
+
+ax_PE = Axis(fig_energy[2,1], xlabel= L"t \, (b_* / L_x) ^{1/2}", ylabel = "PE", title = "PE versus Time for Turbulent Hilly Model")
+lines!(ax_PE, times, potential_energy)
+
+current_figure()
+fig_energy
