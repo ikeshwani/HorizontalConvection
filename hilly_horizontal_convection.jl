@@ -123,7 +123,7 @@ model = NonhydrostaticModel(; grid,
 # We set up a simulation that runs up to ``t = 40`` with a `JLD2OutputWriter` that saves the flow
 # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-simulation = Simulation(model, Δt=1e-2, stop_time=20.0)
+simulation = Simulation(model, Δt=1e-2, stop_time=500.0)
 
 # ### The `TimeStepWizard`
 #
@@ -160,6 +160,10 @@ b = model.tracers.b        # unpack buoyancy `Field`
 ## total flow speed
 s = @at (Center, Center, Center) sqrt(u^2 + w^2)
 
+ke = @at (Center, Center, Center) 1/2 * (u^2 + w^2)
+
+pe = @at (Center,Center,Center) -b * model.grid.zᵃᵃᶜ
+
 ## y-component of vorticity
 ζ = ∂z(u) - ∂x(w)
 nothing # hide
@@ -173,7 +177,7 @@ nothing # hide
 # We then add the `JLD2OutputWriter` to the `simulation`.
 
 
-simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ, χ),
+simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ, χ, ke, pe),
                                                       schedule = TimeInterval(0.5),
                                                       filename = filenames,
                                                       with_halos = true,
