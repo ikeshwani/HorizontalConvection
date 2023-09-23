@@ -47,10 +47,11 @@ H = 1.0          # vertical domain extent
 Lx = 2H          # horizontal domain extent
 Nx, Nz = 128, 64 # horizontal, vertical resolution
 
-underlying_grid = RectilinearGrid(size = (Nx, Nz),
+underlying_grid = RectilinearGrid(GPU(),
+		       size = (Nx, Nz),
                           x = (-Lx/2, Lx/2),
                           z = (-H, 0),
-			halo = (4,4),
+		       halo = (4,4),
                    topology = (Bounded, Flat, Bounded))
 h₀ = 0.75*H
 width = 0.05*Lx
@@ -123,7 +124,7 @@ model = NonhydrostaticModel(; grid,
 # We set up a simulation that runs up to ``t = 40`` with a `JLD2OutputWriter` that saves the flow
 # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-simulation = Simulation(model, Δt=1e-2, stop_time=500.0)
+simulation = Simulation(model, Δt=1e-2, stop_time=10.0)
 
 # ### The `TimeStepWizard`
 #
