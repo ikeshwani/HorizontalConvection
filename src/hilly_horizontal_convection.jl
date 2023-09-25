@@ -1,21 +1,9 @@
-# # Horizontal convection example
+# # Hilly horizontal convection
 #
 # In "horizontal convection", a non-uniform buoyancy is imposed on top of an initially resting fluid.
+# This script is modified from the horizontal convection example in the Oceananigans documentation.
+# We modify the structure of the surface boundary condition, the model parameters, and the bottom topography.
 #
-# This example demonstrates:
-#
-#   * How to use computed `Field`s for output.
-#   * How to post-process saved output using `FieldTimeSeries`.
-#
-# ## Install dependencies
-#
-# First let's make sure we have all required packages installed.
-
-# ```julia
-# using Pkg
-# pkg"add Oceananigans, CairoMakie"
-# ```
-
 # ## Horizontal convection
 #
 # We consider two-dimensional horizontal convection of an incompressible flow ``\boldsymbol{u} = (u, w)``
@@ -28,35 +16,42 @@
 using Oceananigans
 using Printf
 
+## Constant parameters and functions
+
+const H = 1.0            # vertical domain extent
+const Lx = 4H            # horizontal domain extent
+const Nx, Nz = 2048, 512 # horizontal, vertical resolution
+
+const Pr = 1.0     # Prandtl number
+const Ra = 1e12    # Rayleigh number
+
+const h₀ = 0.5*H
+const width = 0.05*Lx
+hill_1(x) = h₀ * exp(-(x+Lx/8)^2 / 2width^2)
+hill_2(x) = 0.75*h₀ * exp(-(x-Lx/4)^2 / 2width^2)
+bottom(x,y) = - H + hill_1(x) + hill_2(x)
+
 ## To write a code that loops for two different advection schemes- no advection, and turbulence
 # We write the following for loop - the model will run for both schemes and will print the data 
 # in two different output files
 
-#define the two different advection schemes
+# Define the two different advection schemes, corresponding to turbulent and non-advective physics
 advection_schemes = [WENO(), nothing]
+cfls = [0.5, Inf]
 
-#define the respective filenames where data will be stored
+# Define the respective filenames where data will be stored
 filenames = ["turbulent_convection_hills.jld2", "diffusive_convection_hills.jld2"]
 
-for (advection_schemes, filenames) in zip(advection_schemes, filenames)
+for (advection_scheme, filename, cfl) in zip(advection_schemes, filenames, cfls)
 
 # ### The grid
 
-
-H = 1.0          # vertical domain extent
-Lx = 2H          # horizontal domain extent
-Nx, Nz = 128, 64 # horizontal, vertical resolution
-
-underlying_grid = RectilinearGrid(size = (Nx, Nz),
+underlying_grid = RectilinearGrid(GPU(),
+		       size = (Nx, Nz),
                           x = (-Lx/2, Lx/2),
                           z = (-H, 0),
-			halo = (4,4),
+		       halo = (4,4),
                    topology = (Bounded, Flat, Bounded))
-h₀ = 0.75*H
-width = 0.05*Lx
-hill_1(x) = h₀ * exp(-(x+Lx/8)^2 / 2width^2)
-hill_2(x) = 0.75*h₀ * exp(-(x-Lx/4)^2 / 2width^2)
-bottom(x,y) = - H + hill_1(x) + hill_2(x)
 
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom))
 
@@ -64,25 +59,24 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom))
 #
 # At the surface, the imposed buoyancy is
 # ```math
-# b(x, z = 0, t) = - b_* \cos (2 \pi x / L_x) \, ,
+# b(x, z = 0, t) = b_* \sin (\pi x / L_x) \, ,
 # ```
 # while zero-flux boundary conditions are imposed on all other boundaries. We use free-slip 
 # boundary conditions on ``u`` and ``w`` everywhere.
 
-b★ = 2.0
-
-@inline bˢ(x, y, t, p) = p.b★ * sin(π * x / (p.Lx/2))
+b★ = 1.0
+@inline bˢ(x, y, t, p) = p.b★ * sin(π * x / p.Lx)
 
 b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(bˢ, parameters=(; b★, Lx)))
 
 # ### Non-dimensional control parameters and Turbulence closure
 #
 # The problem is characterized by three non-dimensional parameters. The first is the domain's
-# aspect ratio, ``L_x / H`` and the other two are the Rayleigh (``Ra``) and Prandtl (``Pr``)
+# aspect ratio, ``H / L_x`` and the other two are the Rayleigh (``Ra``) and Prandtl (``Pr``)
 # numbers:
 #
 # ```math
-# Ra = \frac{b_* L_x^3}{\nu \kappa} \, , \quad \text{and}\, \quad Pr = \frac{\nu}{\kappa} \, .
+# Ra = \frac{b_* H^3}{\nu \kappa} \, , \quad \text{and}\, \quad Pr = \frac{\nu}{\kappa} \, .
 # ```
 #
 # The Prandtl number expresses the ratio of momentum over heat diffusion; the Rayleigh number
@@ -92,16 +86,13 @@ b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(bˢ, parameters=(; 
 # determine the viscosity and diffusivity, i.e.,
 # 
 # ```math
-# \nu = \sqrt{\frac{Pr b_* L_x^3}{Ra}} \quad \text{and} \quad \kappa = \sqrt{\frac{b_* L_x^3}{Pr Ra}} \, .
+# \nu = \sqrt{\frac{Pr b_* H^3}{Ra}} \quad \text{and} \quad \kappa = \sqrt{\frac{b_* H^3}{Pr Ra}} \, .
 # ```
 #
 # We use isotropic viscosity and diffusivities, `ν` and `κ` whose values are obtain from the
 # prescribed ``Ra`` and ``Pr`` numbers. Here, we use ``Pr = 1`` and ``Ra = 10^8``:
 
-Pr = 1.0    # Prandtl number
-Ra = 1e8    # Rayleigh number
-
-ν = sqrt(Pr * b★ * Lx^3 / Ra)  # Laplacian viscosity
+ν = sqrt(Pr * b★ * H^3 / Ra)  # Laplacian viscosity
 κ = ν * Pr                     # Laplacian diffusivity
 nothing # hide
 
@@ -111,7 +102,7 @@ nothing # hide
 # Runge-Kutta time-stepping scheme, and a `BuoyancyTracer`.
 
 model = NonhydrostaticModel(; grid,
-                            advection = advection_schemes,
+                            advection = advection_scheme,
                             timestepper = :RungeKutta3,
                             tracers = :b,
                             buoyancy = BuoyancyTracer(),
@@ -120,18 +111,23 @@ model = NonhydrostaticModel(; grid,
 
 # ## Simulation set-up
 #
-# We set up a simulation that runs up to ``t = 40`` with a `JLD2OutputWriter` that saves the flow
+# We set up a simulation that runs up to ``t = t_f`` with a `JLD2OutputWriter` that saves the flow
 # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-simulation = Simulation(model, Δt=1e-2, stop_time=500.0)
+tf = 50.0
+min_Δz = minimum_zspacing(model.grid)
+diffusive_time_scale = min_Δz^2 / κ
+advective_time_scale = sqrt(min_Δz/b★)
+Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
+simulation = Simulation(model, Δt=Δt, stop_time=tf)
 
 # ### The `TimeStepWizard`
 #
 # The `TimeStepWizard` manages the time-step adaptively, keeping the Courant-Freidrichs-Lewy 
-# (CFL) number close to `0.75` while ensuring the time-step does not increase beyond the 
+# (CFL) number close to `0.5` while ensuring the time-step does not increase beyond the 
 # maximum allowable value for numerical stability.
 
-wizard = TimeStepWizard(cfl=0.75, max_change=1.2, max_Δt=1e-1)
+wizard = TimeStepWizard(cfl=cfl, diffusive_cfl=0.2)
 
 simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(50))
 
@@ -148,7 +144,7 @@ simulation.callbacks[:progress] = Callback(progress, IterationInterval(50))
 # ### Output
 #
 # We use computed `Field`s to diagnose and output the total flow speed, the vorticity, ``\zeta``,
-# and the buoyancy, ``b``. Note that computed `Field`s take "AbstractOperations" on `Field`s as
+# and the buoyancy dissipation, ``\chi``. Note that computed `Field`s take "AbstractOperations" on `Field`s as
 # input:
 
 u, v, w = model.velocities # unpack velocity `Field`s
@@ -168,18 +164,16 @@ pe = @at (Center,Center,Center) -b * model.grid.zᵃᵃᶜ
 ζ = ∂z(u) - ∂x(w)
 nothing # hide
 
-# We create a `JLD2OutputWriter` that saves the speed, and the vorticity. Because we want
-# to post-process buoyancy and compute the buoyancy variance dissipation (which is proportional
-# to ``|\boldsymbol{\nabla} b|^2``) we use the `with_halos = true`. This way, the halos for
-# the fields are saved and thus when we load them as fields they will come with the proper
-# boundary conditions.
+# We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
+# kineatic energy density, and potential energy density. Because we may want to post-process
+# to post-process prognostic fields in ways that satisfy the boundary conditions,
+# we use the `with_halos = true`.
 #
 # We then add the `JLD2OutputWriter` to the `simulation`.
 
-
 simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ, χ, ke, pe),
                                                       schedule = TimeInterval(0.5),
-                                                      filename = filenames,
+                                                      filename = string("../output/", filename),
                                                       with_halos = true,
                                                       overwrite_existing = true)
 nothing # hide
@@ -187,14 +181,5 @@ nothing # hide
 # Ready to press the big red button:
 
 run!(simulation)
-
-# ## Load saved output, process, visualize
-#
-# We animate the results by loading the saved output, extracting data for the iterations we ended
-# up saving at, and ploting the saved fields. From the saved buoyancy field we compute the 
-# buoyancy dissipation, ``\chi = \kappa |\boldsymbol{\nabla} b|^2``, and plot that also.
-#
-# To start we load the saved fields are `FieldTimeSeries` and prepare for animating the flow by
-# creating coordinate arrays that each field lives on.
 
 end

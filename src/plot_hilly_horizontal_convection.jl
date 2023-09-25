@@ -4,11 +4,12 @@ using Oceananigans.Fields
 using Oceananigans.AbstractOperations: volume
 using Statistics
 
-saved_output_filename = "turbulent_convection_hills.jld2"
+diff_filename = "../output/diffusive_convection_hills.jld2"
+turb_filename = "../output/turbulent_convection_hills.jld2"
 
-s_timeseries = FieldTimeSeries(saved_output_filename, "s")
-b_timeseries = FieldTimeSeries(saved_output_filename, "b")
-ζ_timeseries = FieldTimeSeries(saved_output_filename, "ζ")
+s_timeseries = FieldTimeSeries(turb_filename, "s")
+b_timeseries = FieldTimeSeries(turb_filename, "b")
+ζ_timeseries = FieldTimeSeries(turb_filename, "ζ")
 
 xc, yc, zc = nodes(b_timeseries[1])
 
@@ -38,6 +39,8 @@ b_mean_x_perm = permutedims(b_mean_x, (2,1))
 #create a heatmap times on the x-axis, depth on y-axis
 heatmap!(ax_heat1, times, zc, b_mean_x_perm)
 fig_buoy1
+save("../figures/buoyancy_xy-average_incorrect.png", fig_buoy1)
+
 #Now recreate these graphs, but replace the zeros in b_int with NaNs before taking the mean
 
 b_int = replace(b_int, NaN => 0.0)
@@ -63,21 +66,18 @@ b_nans_meanx_perm = permutedims(b_nans_meanx, (2,1))
 
 heatmap!(ax_heat2, times, zc, b_nans_meanx_perm)
 fig_buoy2
+save("../figures/buoyancy_xy-average.png", fig_buoy1)
+
 #Now that we have run an experiment with the two advection schemes 
 # turbulent and diffusive we can analyze those to plot the Nusselt Number
 
-#first open the file with our χ data
-
-b_timeseries_diffusive = FieldTimeSeries("diffusive_convection_hills.jld2", "b")
+b_timeseries_diffusive = FieldTimeSeries(diff_filename, "b")
 times_diff = b_timeseries_diffusive.times
-χ_timeseries_diffusive = FieldTimeSeries("diffusive_convection_hills.jld2", "χ")
+χ_timeseries_diffusive = FieldTimeSeries(diff_filename, "χ")
 
-b_timeseries_turbulent = FieldTimeSeries("turbulent_convection_hills.jld2", "b")
+b_timeseries_turbulent = FieldTimeSeries(turb_filename, "b")
 times_turb = b_timeseries_turbulent.times
-χ_timeseries_turbulent = FieldTimeSeries("turbulent_convection_hills.jld2", "χ")
-
-#χₙ_diffusive = @lift interior(χ_timeseries_diffusive[$n], :, 1, :)
-#χₙ_turbulent = @lift interior(χ_timeseries_turbulent[$n], :, 1, :)
+χ_timeseries_turbulent = FieldTimeSeries(turb_filename, "χ")
 
 χ_diffusive_int = zeros(size(times_diff))
 χ_turbulent_int = zeros(size(times_turb))
@@ -108,11 +108,12 @@ lines!(ax_Nu, times_turb, Nu)
 
 current_figure()
 fig
+save("../figures/Nusselt_number.png", fig)
 
 #energy plots!
 
-ke_timeseries = FieldTimeSeries("turbulent_convection_hills.jld2", "ke")
-pe_timeseries = FieldTimeSeries("turbulent_convection_hills.jld2", "pe")
+ke_timeseries = FieldTimeSeries(turb_filename, "ke")
+pe_timeseries = FieldTimeSeries(turb_filename, "pe")
 
 kinetic_energy = zeros(size(times))
 potential_energy = zeros(size(times))
@@ -136,3 +137,4 @@ lines!(ax_PE, times, potential_energy)
 
 current_figure()
 fig_energy
+save("../figures/kinetic_and_potential_energies.png", fig_energy)
