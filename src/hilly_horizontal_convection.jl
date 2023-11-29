@@ -20,10 +20,10 @@ using Printf
 
 const H = 1.0            # vertical domain extent
 const Lx = 4H            # horizontal domain extent
-const Nx, Nz = 2048, 512 # horizontal, vertical resolution
+const Nx, Nz = 256, 64 # horizontal, vertical resolution
 
 const Pr = 1.0     # Prandtl number
-const Ra = 1e12    # Rayleigh number
+const Ra = 1e8    # Rayleigh number
 
 const h₀ = 0.5*H
 const width = 0.05*Lx
@@ -46,14 +46,16 @@ for (advection_scheme, filename, cfl) in zip(advection_schemes, filenames, cfls)
 
 # ### The grid
 
-underlying_grid = RectilinearGrid(GPU(),
+underlying_grid = RectilinearGrid(CPU(),
 		       size = (Nx, Nz),
                           x = (-Lx/2, Lx/2),
                           z = (-H, 0),
 		       halo = (4,4),
                    topology = (Bounded, Flat, Bounded))
 
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom))
+inside_cylinder(x, y, z) = (x^2 + (z+H/2)^2) <= (h₀/2)^2 # immersed solid
+
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBoundary(inside_cylinder))
 
 # ### Boundary conditions
 #
