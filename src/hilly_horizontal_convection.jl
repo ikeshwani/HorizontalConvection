@@ -19,17 +19,20 @@ using Printf
 ## Constant parameters and functions
 
 const H = 1.0            # vertical domain extent
-const Lx = 4H            # horizontal domain extent
-const Nx, Nz = 2048, 512 # horizontal, vertical resolution
+const Lx = 8H            # horizontal domain extent
+const Ly = H/4
+const Nx, Ny, Nz = 2048, 64, 256 # meridional, zonal, vertical resolution
 
 const Pr = 1.0     # Prandtl number
 const Ra = 1e12    # Rayleigh number
 
-const h₀ = 0.5*H
-const width = 0.05*Lx
-hill_1(x) = h₀ * exp(-(x+Lx/8)^2 / 2width^2)
-hill_2(x) = 0.75*h₀ * exp(-(x-Lx/4)^2 / 2width^2)
-bottom(x,y) = - H + hill_1(x) + hill_2(x)
+const h₀ = 0.6H
+const hill_length = Lx/32
+const channel_width = Ly/8
+hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
+hill_2(x) =      h₀ * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
+channel(y) = (1 - (1/3)*exp(-(y^2) / 2channel_width^2))
+seafloor(x,y) = - H + (hill_1(x) + hill_2(x)) * channel(y)
 
 ## To write a code that loops for two different advection schemes- no advection, and turbulence
 # We write the following for loop - the model will run for both schemes and will print the data 
@@ -40,20 +43,22 @@ advection_schemes = [WENO(), nothing]
 cfls = [0.5, Inf]
 
 # Define the respective filenames where data will be stored
-filenames = ["turbulent_convection_hills.jld2", "diffusive_convection_hills.jld2"]
+filenames = ["turbulent_convection_hills", "diffusive_convection_hills"]
 
 for (advection_scheme, filename, cfl) in zip(advection_schemes, filenames, cfls)
 
 # ### The grid
 
-underlying_grid = RectilinearGrid(GPU(),
-		       size = (Nx, Nz),
-                          x = (-Lx/2, Lx/2),
-                          z = (-H, 0),
-		       halo = (4,4),
-                   topology = (Bounded, Flat, Bounded))
+underlying_grid = RectilinearGrid(
+        GPU(),
+        size = (Nx, Ny, Nz),
+        x = (-Lx/2, Lx/2),
+        y = (-Ly/2, Ly/2),
+        z = (-H, 0),
+        halo = (4,4,4),
+        topology = (Bounded, Periodic, Bounded))
 
-grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom))
+grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(seafloor))
 
 # ### Boundary conditions
 #
@@ -114,7 +119,7 @@ model = NonhydrostaticModel(; grid,
 # We set up a simulation that runs up to ``t = t_f`` with a `JLD2OutputWriter` that saves the flow
 # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-tf = 50.0
+tf = 200.0
 min_Δz = minimum_zspacing(model.grid)
 diffusive_time_scale = min_Δz^2 / κ
 advective_time_scale = sqrt(min_Δz/b★)
@@ -139,7 +144,8 @@ progress(sim) = @printf("i: % 6d, sim time: % 1.3f, wall time: % 10s, Δt: % 1.4
                         iteration(sim), time(sim), prettytime(sim.run_wall_time),
                         sim.Δt, AdvectiveCFL(sim.Δt)(sim.model), DiffusiveCFL(sim.Δt)(sim.model))
 
-simulation.callbacks[:progress] = Callback(progress, IterationInterval(50))
+simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
+
 
 # ### Output
 #
@@ -149,6 +155,7 @@ simulation.callbacks[:progress] = Callback(progress, IterationInterval(50))
 
 u, v, w = model.velocities # unpack velocity `Field`s
 b = model.tracers.b        # unpack buoyancy `Field`
+bmean = Field(Average(b, dims=(2)))
 
 χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
 
@@ -171,15 +178,36 @@ nothing # hide
 #
 # We then add the `JLD2OutputWriter` to the `simulation`.
 
-simulation.output_writers[:fields] = JLD2OutputWriter(model, (; s, b, ζ, χ, ke, pe),
-                                                      schedule = TimeInterval(0.5),
-                                                      filename = string("../output/", filename),
+simulation.output_writers[:checkpointer] = Checkpointer(
+						model,
+						schedule=TimeInterval(100),
+						dir="../output",
+						prefix=string(filename, "_checkpoint"),
+						cleanup=true)
+
+simulation.output_writers[:state] = JLD2OutputWriter(model, (; b, u, v, w),
+                                                      schedule = TimeInterval(200),
+                                                      filename = string("../output/", filename, "_state.jld2"),
                                                       with_halos = true,
                                                       overwrite_existing = true)
+
+simulation.output_writers[:section_snapshots] = JLD2OutputWriter(model, (; b, χ, ke, pe),
+                                                      schedule = TimeInterval(1),
+                        						      indices = (:,Ny÷2,:),
+                                                      filename = string("../output/", filename, "_section_snapshots.jld2"),
+                                                      with_halos = true,
+                                                      overwrite_existing = true)
+
+simulation.output_writers[:zonal_time_means] = JLD2OutputWriter(model, (; b=bmean),
+                                                      schedule = AveragedTimeInterval(1, window=1),
+                                                      filename = string("../output/", filename, "_zonal_time_means.jld2"),
+                                                      with_halos = true,
+                                                      overwrite_existing = true)
+
 nothing # hide
 
 # Ready to press the big red button:
 
-run!(simulation)
+run!(simulation, pickup=true)
 
 end
