@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:V100:1
 #SBATCH --nodes=1                 ## (-N) number of nodes to use
 #SBATCH --ntasks=1                ## (-n) number of tasks to launch
-#SBATCH --mem=12G
+#SBATCH --mem=16G
 #SBATCH --error=slurm-%J.err      ## error log file
 #SBATCH --output=slurm-%J.out     ## output log file
 
