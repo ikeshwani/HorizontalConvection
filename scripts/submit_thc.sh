@@ -14,5 +14,5 @@
 module load cuda/11.7.1
 module load julia/1.9.3
 
-cd /pub/hfdrake/code/HorizontalConvection/src
+cd /pub/$USER/code/HorizontalConvection/src
 julia --project=../ run_thc.jl
