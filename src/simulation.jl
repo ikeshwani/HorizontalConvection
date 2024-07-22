@@ -44,7 +44,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Nz =
     hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
     hill_2(x) =      h₀ * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
     #channel(y) = (1 - (1/3)*exp(-(y^2) / 2channel_width^2))
-    seafloor(x, y) = - H + (hill_1(x) + hill_2(x)) #* channel(y)
+    seafloor(x) = - H + (hill_1(x) + hill_2(x)) #* channel(y)
     
     ## To write a code that loops for two different advection schemes- no advection, and turbulence
     # We write the following for loop - the model will run for both schemes and will print the data 
@@ -86,7 +86,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Nz =
     # boundary conditions on ``u`` and ``w`` everywhere.
     
     b★ = 1.0
-    @inline bˢ(x, y, t, p) = p.b★ * sin(π * x / p.Lx)
+    @inline bˢ(x, t, p) = p.b★ * sin(π * x / p.Lx)
     
     b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(bˢ, parameters=(; b★, Lx)))
     
@@ -181,7 +181,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Nz =
 
     # Seed initial buoyancy field with infinitesimal noise,
     # required to break x-symmetry in otherwise x-symmetric configurations!
-    noise(x, y, z) = 1.e-6*(randn()-0.5)
+    noise(x, z) = 1.e-6*(randn()-0.5)
     set!(simulation.model, b=noise);
 
     # We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
@@ -221,14 +221,14 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Nz =
                                                               global_attributes = global_attributes,
                                                               overwrite_existing = true)
 
-        #filename = string("../output/", filename_prefix, "_section_snapshots.nc")
-        #simulation.output_writers[:section_snapshots] = NetCDFOutputWriter(model, (; b, ke, pe),
-                                                              #schedule = TimeInterval(1),
-                                						      #indices = (:,:),
-                                                              #filename = filename,
-                                                             # with_halos = true,
-                                                             # global_attributes = global_attributes,
-                                                             # overwrite_existing = true)
+        filename = string("../output/", filename_prefix, "_section_snapshots.nc")
+        simulation.output_writers[:section_snapshots] = NetCDFOutputWriter(model, (; b, ke, pe),
+                                                              schedule = TimeInterval(1),
+                                						      indices = (:,1,:),
+                                                              filename = filename,
+                                                              with_halos = true,
+                                                              global_attributes = global_attributes,
+                                                              overwrite_existing = true)
 
         filename = string("../output/", filename_prefix, "_zonal_time_means.nc")
         simulation.output_writers[:zonal_time_means] = NetCDFOutputWriter(model, (; b=b_avg_x),
