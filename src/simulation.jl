@@ -21,48 +21,36 @@ using Oceananigans.BuoyancyModels: Zᶜᶜᶜ
     
     b = model.tracers.b
     grid = model.grid
-    
     return KernelFunctionOperation{Center, Center, Center}(bz_ccc, grid, b)
 end
 
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
-function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Ny = 1, Nz = 32, output_writer=true, advection=true, architecture=CPU())
+function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, output_writer=true, advection=true, architecture=CPU())
     
     ## Constant parameters and functions
     H = 1.0            # vertical domain extent
     Lx = 8H            # horizontal domain extent
 
-    if Ny == 1
-        Ly = 0.0        # no y dependence y FLAT
-    else
-        Ly = H/4          
-    end
-
-    #Nx, Nz = 256, 32 # meridional, zonal, vertical resolution
+    Ny == 1 ? Ly = 0.0 : Ly = H/4 # meridional domain extent
     
     Pr = 1.0     # Prandtl number
     
     h₀ = h₀_frac*H
     hill_length = Lx/32
+    hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
+    hill_2(x) =      h₀ * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
 
     if Ny != 1
         channel_width = Ly/8
         channel(y) = (1 - (1/3)*exp(-(y^2) / 2channel_width^2))
+        seafloor(x, y) = - H + (hill_1(x) + hill_2(x)) * channel(y)
     elseif Ny == 1
         channel_width = 0.0
-        channel(y) = 1.0
+        seafloor_flaty(x) = - H + (hill_1(x) + hill_2(x))
+    
     end
 
-    
-    hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
-    hill_2(x) =      h₀ * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
-    seafloor(x, y) = - H + (hill_1(x) + hill_2(x)) * channel(y)
-    
-    ## To write a code that loops for two different advection schemes- no advection, and turbulence
-    # We write the following for loop - the model will run for both schemes and will print the data 
-    # in two different output files
-    
     # Define the two different advection schemes, corresponding to turbulent and non-advective physics
     if advection
         advection_scheme = WENO()
@@ -73,20 +61,23 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Ny =
         cfl = Inf
         runtype = "diffusive"
     end
-    filename_prefix = string(runtype, "_h", h₀_frac)
+    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra)
 
     # ### The grid
 
-    underlying_grid_yflat = RectilinearGrid(
+    if Ny == 1
+        underlying_grid_yflat = RectilinearGrid(
             architecture, 
-            size = (Nx, Nz)
+            size = (Nx, Nz),
             x = (-Lx/2, Lx/2), 
             z = (-H, 0), 
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded))
-    
+        
+        grid = ImmersedBoundaryGrid(underlying_grid_yflat, GridFittedBottom(seafloor_flaty))
 
-    underlying_grid_yperiodic = RectilinearGrid(
+    elseif Ny != 1
+        underlying_grid_yperiodic = RectilinearGrid(
             architecture,
             size = (Nx, Ny, Nz),
             x = (-Lx/2, Lx/2),
@@ -94,15 +85,10 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Ny =
             z = (-H, 0),
             halo = (4,4,4),
             topology = (Bounded, Periodic, Bounded))
-
-            
-    if Ny == 1
-        underlying_grid = underlying_grid_yflat
-    elseif Ny != 1
-        underlying_grid = underlying_grid_yperiodic
+        
+        grid = ImmersedBoundaryGrid(underlying_grid_yperiodic, GridFittedBottom(seafloor))
     end
 
-    grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(seafloor))
 
     
     # ### Boundary conditions
@@ -115,9 +101,13 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Ny =
     # boundary conditions on ``u`` and ``w`` everywhere.
     
     b★ = 1.0
-    @inline bˢ(x, t, p) = p.b★ * sin(π * x / p.Lx)
-    
-    b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(bˢ, parameters=(; b★, Lx)))
+    if Ny == 1
+        @inline bˢ_flat(x, t, p) = p.b★ * sin(π * x / p.Lx)
+        b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(bˢ_flat, parameters=(; b★, Lx)))
+    elseif Ny != 1
+        @inline bˢ(x, y, t, p) = p.b★ * sin(π * x / p.Lx)
+        b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(bˢ, parameters=(; b★, Lx)))
+    end    
     
     # ### Non-dimensional control parameters and Turbulence closure
     #
@@ -201,16 +191,18 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Ny =
     b = model.tracers.b        # unpack buoyancy `Field`
 
     # Define online diagnostics
-    b_avg_x = Field(Average(b, dims=(2)))
-    
     χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
     
-    ke = @at (Center, Center, Center) 1/2 * (u^2 + w^2)
+    ke = @at (Center, Center, Center) 1/2 * (u^2 + v^2 + w^2)
     pe = PotentialEnergy(model)
+
+    b_avg_y = Field(Average(b, dims=(2)))
 
     # Seed initial buoyancy field with infinitesimal noise,
     # required to break x-symmetry in otherwise x-symmetric configurations!
-    noise(x, z) = 1.e-6*(randn()-0.5)
+    noise(x, y, z) = 1.e-6*(randn()-0.5)
+    noise(x, z) =  noise(x, 0, z)
+
     set!(simulation.model, b=noise);
 
     # We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
@@ -220,19 +212,27 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Ny =
     #
     # We then add the `JLD2OutputWriter` to the `simulation`.
 
+    if Ny == 1
+        indices = (:,1,:)
+    elseif Ny != 1
+        indices = (:,Ny÷2, :)
+    end
+
     if output_writer
 
     	global_attributes = Dict(
     		"h0" => h₀_frac,
     		"Ra" => Ra,
     	)
-		
+        simulation.output_writers
+
         simulation.output_writers[:checkpointer] = Checkpointer(
         						model,
         						schedule = TimeInterval(200),
         						dir = "../output",
         						prefix = string(filename_prefix, "_checkpoint"),
         						cleanup = true)
+
 
         filename = string("../output/", filename_prefix, "_buoyancy.nc")
         simulation.output_writers[:buoyancy] = NetCDFOutputWriter(model, (; b, chi=χ),
@@ -243,7 +243,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Ny =
                                                               overwrite_existing = true)
 
         filename = string("../output/", filename_prefix, "_velocities.nc")
-        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, w),
+        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w),
                                                               schedule = TimeInterval(100),
                                                               filename = filename,
                                                               with_halos = true,
@@ -253,19 +253,19 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx = 256, Ny =
         filename = string("../output/", filename_prefix, "_section_snapshots.nc")
         simulation.output_writers[:section_snapshots] = NetCDFOutputWriter(model, (; b, ke, pe),
                                                               schedule = TimeInterval(1),
-                                						      indices = (:,1,:),
+                                						      indices = indices,
                                                               filename = filename,
                                                               with_halos = true,
                                                               global_attributes = global_attributes,
                                                               overwrite_existing = true)
 
         filename = string("../output/", filename_prefix, "_zonal_time_means.nc")
-        simulation.output_writers[:zonal_time_means] = NetCDFOutputWriter(model, (; b=b_avg_x),
-                                                              schedule = AveragedTimeInterval(1, window=1),
-                                                              filename = filename,
-                                                              with_halos = true,
-                                                              global_attributes = global_attributes,
-                                                              overwrite_existing = true)
+        simulation.output_writers[:zonal_time_means] = NetCDFOutputWriter(model, (; b=b_avg_y),
+                                                            schedule = AveragedTimeInterval(1, window=1),
+                                                            filename = filename,
+                                                            with_halos = true,
+                                                            global_attributes = global_attributes,
+                                                            overwrite_existing = true)
         
     end
 
