@@ -16,6 +16,7 @@ using Printf
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Grids: Center
 using Oceananigans.BuoyancyModels: Zᶜᶜᶜ
+using Oceanostics
 
 @inline function PotentialEnergy(model)
     
@@ -41,6 +42,9 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
     hill_2(x) =      h₀ * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
 
+    #Ny == 1 ? channel_width = 0.0 : channel_width = Ly/8
+    #Ny == 1 ? seafloor_flaty(x) = - H + (hill_1(x) + hill_2(x)) : channel(y) = (1 - (1/3)*exp(-(y^2) / 2channel_width^2)) & seafloor(x, y) = - H + (hill_1(x) + hill_2(x)) * channel(y)
+    
     if Ny != 1
         channel_width = Ly/8
         channel(y) = (1 - (1/3)*exp(-(y^2) / 2channel_width^2))
@@ -61,7 +65,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
         cfl = Inf
         runtype = "diffusive"
     end
-    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra)
+    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra, "_HydPresAnom") #changed prefix to include hydrostatic_pressure_anomaly for bug fix 
 
     # ### The grid
 
@@ -146,6 +150,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
                                 tracers = :b,
                                 buoyancy = BuoyancyTracer(),
                                 closure = ScalarDiffusivity(; ν, κ),
+                                hydrostatic_pressure_anomaly = CenterField(grid), #attempt to fix weird bug
                                 boundary_conditions = (; b=b_bcs))
     
     # ## Simulation set-up
@@ -153,7 +158,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     # We set up a simulation that runs up to ``t = t_f`` with a `JLD2OutputWriter` that saves the flow
     # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-    tf = 100.0
+    tf = 316.0
     min_Δz = minimum_zspacing(model.grid)
     diffusive_time_scale = min_Δz^2 / κ
     advective_time_scale = sqrt(min_Δz/b★)
@@ -191,9 +196,19 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     b = model.tracers.b        # unpack buoyancy `Field`
 
     # Define online diagnostics
-    χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
+   # χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
+
+    #using Oceanostics to define online diagnostics
+    ke = KineticEnergy(model)
+    ε = KineticEnergyDissipationRate(model)
+    χ = TracerVarianceDissipationRate(model, :b)
+    #wb = BuoyancyProductionTerm(model)
+
     
-    ke = @at (Center, Center, Center) 1/2 * (u^2 + v^2 + w^2)
+
+    oceanostics_diags = (; ke, ε, χ)
+
+    #ke = @at (Center, Center, Center) 1/2 * (u^2 + v^2 + w^2)
     pe = PotentialEnergy(model)
 
     b_avg_y = Field(Average(b, dims=(2)))
@@ -262,6 +277,15 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
         filename = string("../output/", filename_prefix, "_zonal_time_means.nc")
         simulation.output_writers[:zonal_time_means] = NetCDFOutputWriter(model, (; b=b_avg_y),
                                                             schedule = AveragedTimeInterval(1, window=1),
+                                                            filename = filename,
+                                                            with_halos = true,
+                                                            global_attributes = global_attributes,
+                                                            overwrite_existing = true)
+
+        filename = string("../output/", filename_prefix, "_oceanostics.nc")
+        simulation.output_writers[:oceanostics] = NetCDFOutputWriter(model, oceanostics_diags,
+                                                            schedule = TimeInterval(10),
+                                                            indices = indices,
                                                             filename = filename,
                                                             with_halos = true,
                                                             global_attributes = global_attributes,
