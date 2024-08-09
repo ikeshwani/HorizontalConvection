@@ -42,6 +42,9 @@ function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, N
     hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
     hill_2(x) =      h₀ * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
 
+    #Ny == 1 ? channel_width = 0.0 : channel_width = Ly/8
+    #Ny == 1 ? seafloor_flaty(x) = - H + (hill_1(x) + hill_2(x)) : channel(y) = (1 - (1/3)*exp(-(y^2) / 2channel_width^2)) & seafloor(x, y) = - H + (hill_1(x) + hill_2(x)) * channel(y)
+    
     if Ny != 1
         channel_width = Ly/8
         channel(y) = (1 - (1/3)*exp(-(y^2) / 2channel_width^2))
@@ -62,7 +65,7 @@ function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, N
         cfl = Inf
         runtype = "diffusive"
     end
-    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra)
+    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra, "coldstart") #changed prefix to include hydrostatic_pressure_anomaly for bug fix 
 
     # ### The grid
 
@@ -147,7 +150,7 @@ function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, N
                                 tracers = :b,
                                 buoyancy = BuoyancyTracer(),
                                 closure = ScalarDiffusivity(; ν, κ),
-				hydrostatic_pressure_anomaly = CenterField(grid),
+                                hydrostatic_pressure_anomaly = CenterField(grid), #attempt to fix weird bug
                                 boundary_conditions = (; b=b_bcs))
     
     # ## Simulation set-up
@@ -155,7 +158,7 @@ function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, N
     # We set up a simulation that runs up to ``t = t_f`` with a `JLD2OutputWriter` that saves the flow
     # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-    tf = 10000.0
+    tf = 50.0
     min_Δz = minimum_zspacing(model.grid)
     diffusive_time_scale = min_Δz^2 / κ
     advective_time_scale = sqrt(min_Δz/b★)
@@ -193,7 +196,6 @@ function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, N
     b = model.tracers.b        # unpack buoyancy `Field`
 
     # Define online diagnostics
-    #χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
     
     #using Oceanostics to define online diagnostics
     ke = KineticEnergy(model)
@@ -203,7 +205,6 @@ function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, N
 
     oceanostics_diags = (; ke, ε, χ)
 
-    #ke = @at (Center, Center, Center) 1/2 * (u^2 + v^2 + w^2)
     pe = PotentialEnergy(model)
 
     b_avg_y = Field(Average(b, dims=(2)))
@@ -213,7 +214,9 @@ function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, N
     noise(x, y, z) = 1.e-6*(randn()-0.5)
     noise(x, z) =  noise(x, 0, z)
 
-    set!(simulation.model, b=noise);
+    #b_init = write this better 
+
+    set!(simulation.model, b = -0.6 + noise);
 
     # We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
     # kineatic energy density, and potential energy density. Because we may want to post-process
@@ -277,7 +280,7 @@ function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, N
                                                             global_attributes = global_attributes,
                                                             overwrite_existing = true)
 
-	filename = string("../output/", filename_prefix, "_oceanostics.nc")
+        filename = string("../output/", filename_prefix, "_oceanostics.nc")
         simulation.output_writers[:oceanostics] = NetCDFOutputWriter(model, oceanostics_diags,
                                                             schedule = TimeInterval(10),
                                                             indices = indices,
