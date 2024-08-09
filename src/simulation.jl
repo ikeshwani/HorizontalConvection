@@ -65,7 +65,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
         cfl = Inf
         runtype = "diffusive"
     end
-    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra, "_HydPresAnom") #changed prefix to include hydrostatic_pressure_anomaly for bug fix 
+    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra, "coldstart") #changed prefix to include hydrostatic_pressure_anomaly for bug fix 
 
     # ### The grid
 
@@ -158,7 +158,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     # We set up a simulation that runs up to ``t = t_f`` with a `JLD2OutputWriter` that saves the flow
     # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-    tf = 316.0
+    tf = 50.0
     min_Δz = minimum_zspacing(model.grid)
     diffusive_time_scale = min_Δz^2 / κ
     advective_time_scale = sqrt(min_Δz/b★)
@@ -218,7 +218,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     noise(x, y, z) = 1.e-6*(randn()-0.5)
     noise(x, z) =  noise(x, 0, z)
 
-    set!(simulation.model, b=noise);
+    set!(simulation.model, b = -0.75);
 
     # We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
     # kineatic energy density, and potential energy density. Because we may want to post-process
