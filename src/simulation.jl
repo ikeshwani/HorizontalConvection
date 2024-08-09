@@ -16,6 +16,7 @@ using Printf
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Grids: Center
 using Oceananigans.BuoyancyModels: Zᶜᶜᶜ
+using Oceanostics
 
 @inline function PotentialEnergy(model)
     
@@ -26,7 +27,7 @@ end
 
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
-function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, output_writer=true, advection=true, architecture=CPU())
+function HorizontalConvectionSimulation(; Ra=1e7, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, output_writer=true, advection=true, architecture=GPU())
     
     ## Constant parameters and functions
     H = 1.0            # vertical domain extent
@@ -146,6 +147,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
                                 tracers = :b,
                                 buoyancy = BuoyancyTracer(),
                                 closure = ScalarDiffusivity(; ν, κ),
+				hydrostatic_pressure_anomaly = CenterField(grid),
                                 boundary_conditions = (; b=b_bcs))
     
     # ## Simulation set-up
@@ -153,7 +155,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     # We set up a simulation that runs up to ``t = t_f`` with a `JLD2OutputWriter` that saves the flow
     # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-    tf = 100.0
+    tf = 10000.0
     min_Δz = minimum_zspacing(model.grid)
     diffusive_time_scale = min_Δz^2 / κ
     advective_time_scale = sqrt(min_Δz/b★)
@@ -191,9 +193,17 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     b = model.tracers.b        # unpack buoyancy `Field`
 
     # Define online diagnostics
-    χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
+    #χ = @at (Center, Center, Center) κ * (∂x(b)^2 + ∂z(b)^2)
     
-    ke = @at (Center, Center, Center) 1/2 * (u^2 + v^2 + w^2)
+    #using Oceanostics to define online diagnostics
+    ke = KineticEnergy(model)
+    ε = KineticEnergyDissipationRate(model)
+    χ = TracerVarianceDissipationRate(model, :b)
+    #wb = BuoyancyProductionTerm(model)
+
+    oceanostics_diags = (; ke, ε, χ)
+
+    #ke = @at (Center, Center, Center) 1/2 * (u^2 + v^2 + w^2)
     pe = PotentialEnergy(model)
 
     b_avg_y = Field(Average(b, dims=(2)))
@@ -253,7 +263,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
         filename = string("../output/", filename_prefix, "_section_snapshots.nc")
         simulation.output_writers[:section_snapshots] = NetCDFOutputWriter(model, (; b, ke, pe),
                                                               schedule = TimeInterval(1),
-                                						      indices = indices,
+                                			      indices = indices,
                                                               filename = filename,
                                                               with_halos = true,
                                                               global_attributes = global_attributes,
@@ -266,7 +276,16 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
                                                             with_halos = true,
                                                             global_attributes = global_attributes,
                                                             overwrite_existing = true)
-        
+
+	filename = string("../output/", filename_prefix, "_oceanostics.nc")
+        simulation.output_writers[:oceanostics] = NetCDFOutputWriter(model, oceanostics_diags,
+                                                            schedule = TimeInterval(10),
+                                                            indices = indices,
+                                                            filename = filename,
+                                                            with_halos = true,
+                                                            global_attributes = global_attributes,
+                                                            overwrite_existing = true)
+
     end
 
     return simulation
