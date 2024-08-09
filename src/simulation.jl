@@ -218,7 +218,9 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     noise(x, y, z) = 1.e-6*(randn()-0.5)
     noise(x, z) =  noise(x, 0, z)
 
-    set!(simulation.model, b = -0.75);
+    #b_init = write this better 
+
+    set!(simulation.model, b = -0.6 + noise);
 
     # We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
     # kineatic energy density, and potential energy density. Because we may want to post-process
