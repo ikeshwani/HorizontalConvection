@@ -27,7 +27,14 @@ end
 
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
-function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, output_writer=true, advection=true, architecture=CPU())
+function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=CPU())
+    
+    #experiment_type = Dict(
+    #    "coldstart" => "",
+    #    "warmstart" => "Warm start",
+    #    "originalstart" => "Original start"
+    #)
+    
     
     ## Constant parameters and functions
     H = 1.0            # vertical domain extent
@@ -36,7 +43,14 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     Ny == 1 ? Ly = 0.0 : Ly = H/4 # meridional domain extent
     
     Pr = 1.0     # Prandtl number
-    
+
+
+    #if experiment_type == "nohills"
+    #    h₀_frac = 0.0
+   # if experiment_type == "hilly"
+    #    h₀_frac > 0.0
+    #end
+
     h₀ = h₀_frac*H
     hill_length = Lx/32
     hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
@@ -65,7 +79,16 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
         cfl = Inf
         runtype = "diffusive"
     end
-    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra, "coldstart") #changed prefix to include hydrostatic_pressure_anomaly for bug fix 
+
+    if b_init < 0.0
+        starttype = "_coldstart"
+    elseif b_init > 0.0
+        starttype = "_warmstart"
+    elseif b_init == 0.0
+        starttype = "zerostart"
+    end
+
+    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra, starttype) 
 
     # ### The grid
 
@@ -218,9 +241,19 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     noise(x, y, z) = 1.e-6*(randn()-0.5)
     noise(x, z) =  noise(x, 0, z)
 
-    #b_init = write this better 
+    B₀(x, y, z) = b_init + noise(x, y, z)
+    B₀(x, z) = B₀(x, 0, z) 
 
-    set!(simulation.model, b = -0.6 + noise);
+
+    #if experiment_type == "coldstart"
+    #    b_init < 0.0
+    #elseif experiment_type == "warmstart"
+   #    b_init > 0.0
+    #elseif experiment_type == "originalstart"
+    #    b_init = 0.0
+   # end
+
+    set!(simulation.model, b = B₀);
 
     # We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
     # kineatic energy density, and potential energy density. Because we may want to post-process
