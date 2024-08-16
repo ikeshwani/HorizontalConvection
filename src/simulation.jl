@@ -27,7 +27,7 @@ end
 
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
-function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=CPU())
+function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=GPU())
     
     #experiment_type = Dict(
     #    "coldstart" => "",
@@ -180,7 +180,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     # We set up a simulation that runs up to ``t = t_f`` with a `JLD2OutputWriter` that saves the flow
     # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-    tf = 50.0
+    tf = 7000.0
     min_Δz = minimum_zspacing(model.grid)
     diffusive_time_scale = min_Δz^2 / κ
     advective_time_scale = sqrt(min_Δz/b★)
