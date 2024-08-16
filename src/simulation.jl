@@ -27,6 +27,11 @@ end
 
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
+struct HorizontalConvectionParametrs
+    Ra :: Float64
+    h₀_frac :: Float64
+end
+
 function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=CPU())
     
     #experiment_type = Dict(
@@ -273,6 +278,10 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     	global_attributes = Dict(
     		"h0" => h₀_frac,
     		"Ra" => Ra,
+            "Pr" => Pr,
+            "ν"  => ν, 
+            "κ"  => κ,
+
     	)
         simulation.output_writers
 
