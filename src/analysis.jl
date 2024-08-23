@@ -69,4 +69,47 @@ function find_ε(ds)
     
 end
 
+#function to find the streamfunction ψ
 
+function get_ψ(ds)
+
+    function integrate_udy(ds)
+        x = ds["xC"][4+1:end-4]; Nx = length(x);
+        H = 1.0;
+        y = ds["yC"][:]; Ny = length(y); Ly = H/4;
+        Δy = Ly/Ny;
+        z = ds["zC"][4+1:end-4]; Nz = length(z); 
+        Δz = reshape(diff(ds["zF"])[4+1:end-4], 1,1,Nz);
+        t = ds["time"][:];
+    
+        #the first step is calculating the integral of u over dy
+        ∫udy = zeros(Nx, 1, Nz, size(t,1))
+        for n in 1:size(t,1)
+            ut = ds["u"][5+1:end-4, :, 4+1:end-4, n];
+            wet = ut.!=0.
+            ut[.!wet] .= NaN
+            ∫udy[:,1,:,n] = nansum(
+                ut .*
+                Δy, 
+                dims=(2))
+        end
+        return ∫udy
+    end 
+    x = ds["xC"][4+1:end-4]; Nx = length(x);
+    z = ds["zC"][4+1:end-4]; Nz = length(z);
+    Δz = reshape(diff(ds["zF"])[4+1:end-4], 1,1,Nz,1);
+    t = ds["time"][:];
+    ψ = zeros(Nx, Nz, size(t,1))  
+    for i in 1:Nz
+        ∫udy = integrate_udy(ds)[:, 1:1, 1:i, :]
+        wet = ∫udy.!=0.
+        ∫udy[.!wet] .= NaN
+        Ψ_tmp = nansum(
+            ∫udy .* 
+            Δz[:,:,1:i,1],
+            dims=(3)
+        )[:,1,1,:]
+        ψ[:,i,:] = Ψ_tmp
+    end
+    return ψ
+end
