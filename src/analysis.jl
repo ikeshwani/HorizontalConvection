@@ -7,8 +7,9 @@ using Oceananigans.AbstractOperations: volume
 using NaNStatistics
 
 
-#function to find  χ same method used for turbulent and diffusive
-function find_χ(ds)
+#global volume integral function to generalize find χ and find ϵ
+
+function global_volume_integral(ds, var)
     x = ds["xC"][4+1:end-4]; Nx = length(x);
     z = ds["zC"][4+1:end-4]; Nz = length(z);
     time = ds["time"][:];
@@ -16,20 +17,18 @@ function find_χ(ds)
     Δz = reshape(diff(ds["zF"])[4+1:end-4], 1,1,Nz);
     ΔA = Δx; #flat in y -- 2 dimensional
     ΔV = ΔA.*Δz;
-    χ = zeros(size(time,1));
+    var = zeros(size(time,1));
     for n in 1:size(time, 1)
-        χt = ds["chi"][4+1:end-4, 1, 4+1:end-4, n]
-        wet = χt.!=0.
-        χt[.!wet] .= NaN
-        χ[n] = nansum(
-            χt .*
+        var_t = ds[var][4+1:end-4, 1, 4+1:end-4, n]
+        wet = var_t.!=0.
+        var_t[.!wet] .= NaN
+        var[n] = nansum(
+            var_t .*
             ΔV,
             dims=(1,2,3)
         )[1,1,1]
-    end
-    return χ
-    
-    
+    end  
+    return var  
 end
 
 #function to find the bottom buoyancy average
@@ -47,27 +46,6 @@ function buoyancy_bottom_avg(ds)
     return bottom_avg
 end
 
-#function to find ε 
-
-function find_ε(ds)
-    x = ds["xC"][4+1:end-4]; Nx = length(x);
-    z = ds["zC"][4+1:end-4]; Nz = length(z);
-    time = ds["time"][:];
-    Δx = reshape(diff(ds["xF"])[4+1:end-4], Nx,1,1);
-    Δz = reshape(diff(ds["zF"])[4+1:end-4], 1,1,Nz);
-    ΔA = Δx; #flat in y -- 2 dimensional
-    ΔV = ΔA.*Δz;
-    ε = zeros(size(time,1));
-    for n in 1:size(time, 1)
-       εt = ds["ε"][4+1:end-4, 1, 4+1:end-4, n]
-        wet =εt.!=0.
-       εt[.!wet] .= NaN
-        ε[n] = nanmean(εt, dims=(1,1))[1,1]
-    end
-    return ε
-    
-    
-end
 
 #function to find the streamfunction ψ
 
