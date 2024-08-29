@@ -17,18 +17,18 @@ function global_volume_integral(ds, var)
     Δz = reshape(diff(ds["zF"])[4+1:end-4], 1,1,Nz);
     ΔA = Δx; #flat in y -- 2 dimensional
     ΔV = ΔA.*Δz;
-    var = zeros(size(time,1));
+    var_array = zeros(size(time,1));
     for n in 1:size(time, 1)
         var_t = ds[var][4+1:end-4, 1, 4+1:end-4, n]
         wet = var_t.!=0.
         var_t[.!wet] .= NaN
-        var[n] = nansum(
+        var_array[n] = nansum(
             var_t .*
             ΔV,
             dims=(1,2,3)
         )[1,1,1]
     end  
-    return var  
+    return var_array  
 end
 
 #function to find the bottom buoyancy average
