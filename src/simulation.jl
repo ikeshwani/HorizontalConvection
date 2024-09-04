@@ -38,7 +38,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     H = 1.0            # vertical domain extent
     Lx = 8H            # horizontal domain extent
 
-    Ny == 1 ? Ly = 0.0 : Ly = H/4 # meridional domain extent
+    Ly = H/4 # meridional domain extent
     
     Pr = 1.0     # Prandtl number
 
