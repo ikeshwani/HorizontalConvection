@@ -28,35 +28,19 @@ end
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
 function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=GPU())
-
-    #experiment_type = Dict(
-    #    "coldstart" => "",
-    #    "warmstart" => "Warm start",
-    #    "originalstart" => "Original start"
-    #)
     
     ## Constant parameters and functions
     H = 1.0            # vertical domain extent
     Lx = 8H            # horizontal domain extent
 
-    Ny == 1 ? Ly = 0.0 : Ly = H/4 # meridional domain extent
+    Ly = H/4 # meridional domain extent
     
     Pr = 1.0     # Prandtl number
-
-
-    #if experiment_type == "nohills"
-    #    h₀_frac = 0.0
-   # if experiment_type == "hilly"
-    #    h₀_frac > 0.0
-    #end
 
     h₀ = h₀_frac*H
     hill_length = Lx/32
     hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
     hill_2(x) =      h₀ * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
-
-    #Ny == 1 ? channel_width = 0.0 : channel_width = Ly/8
-    #Ny == 1 ? seafloor_flaty(x) = - H + (hill_1(x) + hill_2(x)) : channel(y) = (1 - (1/3)*exp(-(y^2) / 2channel_width^2)) & seafloor(x, y) = - H + (hill_1(x) + hill_2(x)) * channel(y)
     
     if Ny != 1
         channel_width = Ly/8
@@ -180,12 +164,13 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     # We set up a simulation that runs up to ``t = t_f`` with a `JLD2OutputWriter` that saves the flow
     # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
-    tf = 7000.0
+
+    τ_eq = 1.0/sqrt(Ra)
     min_Δz = minimum_zspacing(model.grid)
     diffusive_time_scale = min_Δz^2 / κ
     advective_time_scale = sqrt(min_Δz/b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
-    simulation = Simulation(model, Δt=Δt, stop_time=tf)
+    simulation = Simulation(model, Δt=Δt, stop_time=τ_eq)
     
     # ### The `TimeStepWizard`
     #
@@ -223,7 +208,6 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     ke = KineticEnergy(model)
     ε = KineticEnergyDissipationRate(model)
     χ = TracerVarianceDissipationRate(model, :b)
-    #wb = BuoyancyProductionTerm(model)
 
     oceanostics_diags = (; ke, ε, χ)
 
@@ -239,15 +223,6 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     B₀(x, y, z) = b_init + noise(x, y, z)
     B₀(x, z) = B₀(x, 0, z) 
 
-
-    #if experiment_type == "coldstart"
-    #    b_init < 0.0
-    #elseif experiment_type == "warmstart"
-   #    b_init > 0.0
-    #elseif experiment_type == "originalstart"
-    #    b_init = 0.0
-   # end
-
     set!(simulation.model, b = B₀);
 
     # We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
@@ -262,6 +237,8 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     elseif Ny != 1
         indices = (:,Ny÷2, :)
     end
+    
+    time_interval = τ_eq/200 
 
     if output_writer
 
@@ -271,6 +248,11 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
             "Pr" => Pr,
             "ν"  => ν, 
             "κ"  => κ,
+            "Lx" => Lx,
+            "Ly" => Ly,
+            "H"  => H,
+            "halo" => Oceananigans.halo_size(grid),
+            "b★" => b★,
 
     	)
         simulation.output_writers
@@ -285,7 +267,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
 
         filename = string("../output/", filename_prefix, "_buoyancy.nc")
         simulation.output_writers[:buoyancy] = NetCDFOutputWriter(model, (; b, chi=χ),
-                                                              schedule = TimeInterval(10),
+                                                              schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
                                                               global_attributes = global_attributes,
@@ -293,7 +275,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
 
         filename = string("../output/", filename_prefix, "_velocities.nc")
         simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w),
-                                                              schedule = TimeInterval(100),
+                                                              schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
                                                               global_attributes = global_attributes,
