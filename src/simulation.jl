@@ -278,7 +278,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
                                                               overwrite_existing = true)
 
         filename = string("../output/", filename_prefix, "_velocities.nc")
-        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w),
+        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w, wb),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
