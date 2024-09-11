@@ -202,6 +202,10 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     u, v, w = model.velocities # unpack velocity `Field`s
     b = model.tracers.b        # unpack buoyancy `Field`
 
+    #define w*b online rather than offline to compute buoyancy flux offline
+
+    wb .= @at (Center, Center, Center) w .* b
+
     # Define online diagnostics
     
     #using Oceanostics to define online diagnostics
