@@ -27,13 +27,8 @@ end
 
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
-struct HorizontalConvectionParametrs
-    Ra :: Float64
-    h₀_frac :: Float64
-end
-
-function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=CPU())
-     
+function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=GPU())
+    
     ## Constant parameters and functions
     H = 1.0            # vertical domain extent
     Lx = 8H            # horizontal domain extent
@@ -170,7 +165,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     # speed, ``\sqrt{u^2 + w^2}``, the buoyancy, ``b``, and the vorticity, ``\partial_z u - \partial_x w``.
 
 
-    τ_eq = 1.0/sqrt(Ra)
+    τ_eq = sqrt(Ra)
     min_Δz = minimum_zspacing(model.grid)
     diffusive_time_scale = min_Δz^2 / κ
     advective_time_scale = sqrt(min_Δz/b★)
@@ -207,13 +202,16 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     u, v, w = model.velocities # unpack velocity `Field`s
     b = model.tracers.b        # unpack buoyancy `Field`
 
-    # Define online diagnostics
+    #define w*b online rather than offline to compute buoyancy flux offline
 
+    bw = @at (Center, Center, Center) b * w
+
+    # Define online diagnostics
+    
     #using Oceanostics to define online diagnostics
     ke = KineticEnergy(model)
     ε = KineticEnergyDissipationRate(model)
     χ = TracerVarianceDissipationRate(model, :b)
-    
 
     oceanostics_diags = (; ke, ε, χ)
 
@@ -257,7 +255,6 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
             "Lx" => Lx,
             "Ly" => Ly,
             "H"  => H,
-            #"halo" => Oceananigans.halo_size(grid),
             "b★" => b★,
 
     	)
@@ -280,7 +277,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
                                                               overwrite_existing = true)
 
         filename = string("../output/", filename_prefix, "_velocities.nc")
-        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w),
+        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w, w_times_b = bw),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
@@ -290,7 +287,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
         filename = string("../output/", filename_prefix, "_section_snapshots.nc")
         simulation.output_writers[:section_snapshots] = NetCDFOutputWriter(model, (; b, ke, pe),
                                                               schedule = TimeInterval(1),
-                                						      indices = indices,
+                                			      indices = indices,
                                                               filename = filename,
                                                               with_halos = true,
                                                               global_attributes = global_attributes,
@@ -312,7 +309,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
                                                             with_halos = true,
                                                             global_attributes = global_attributes,
                                                             overwrite_existing = true)
-        
+
     end
 
     return simulation

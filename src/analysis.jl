@@ -31,19 +31,22 @@ function global_volume_integral(ds, var)
     return var_array  
 end
 
-#function to find the bottom buoyancy average
+#function to find the buoyancy average at the bottom or top
 
-function buoyancy_bottom_avg(ds)
-    b_bottom = ds["b"][4+1:end-4,1,4+1,:]
-    bottom_avg = zeros(size(b_bottom[1,:]));
-    for n in 1:size(b_bottom,2)
-        bb = b_bottom[:,n]
-        wet = bb.!=0.
-        bb[.!wet] .= NaN
-
-        bottom_avg[n] = nanmean(bb, dims=1)[1,1]
+function buoyancy_level_avg(ds, level)
+    if level == "bottom"
+        b_level = ds["b"][4+1:end-4,1,4+1,:]
+    elseif level == "top"
+        b_level = ds["b"][4+1:end-4, 1, end-4, :]
     end
-    return bottom_avg
+    level_avg = zeros(size(b_level[1,:]));
+    for n in 1:size(b_level,2)
+        bL = b_level[:,n]
+        wet = bL.!=0.
+        bL[.!wet] .= NaN
+        level_avg[n] = nanmean(bL, dims=1)[1,1]
+    end
+    return level_avg     
 end
 
 
