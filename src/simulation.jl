@@ -257,7 +257,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
             "Lx" => Lx,
             "Ly" => Ly,
             "H"  => H,
-            "halo" => Oceananigans.halo_size(grid),
+            #"halo" => Oceananigans.halo_size(grid),
             "b★" => b★,
 
     	)
