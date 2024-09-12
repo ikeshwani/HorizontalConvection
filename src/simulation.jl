@@ -218,6 +218,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     pe = PotentialEnergy(model)
 
     b_avg_y = Field(Average(b, dims=(2)))
+    
 
     # Seed initial buoyancy field with infinitesimal noise,
     # required to break x-symmetry in otherwise x-symmetric configurations!
@@ -269,7 +270,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
 
 
         filename = string("../output/", filename_prefix, "_buoyancy.nc")
-        simulation.output_writers[:buoyancy] = NetCDFOutputWriter(model, (; b, chi=χ),
+        simulation.output_writers[:buoyancy] = NetCDFOutputWriter(model, (; b, chi=χ, ∫ϕz = bw),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
@@ -277,7 +278,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
                                                               overwrite_existing = true)
 
         filename = string("../output/", filename_prefix, "_velocities.nc")
-        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w, w_times_b = bw),
+        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
