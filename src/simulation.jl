@@ -204,7 +204,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
 
     #define w*b online rather than offline to compute buoyancy flux offline
 
-    wb .= @at (Center, Center, Center) w .* b
+    bw = @at (Center, Center, Center) b * w
 
     # Define online diagnostics
     
@@ -278,7 +278,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
                                                               overwrite_existing = true)
 
         filename = string("../output/", filename_prefix, "_velocities.nc")
-        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w, wb),
+        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w, w_times_b = bw),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
