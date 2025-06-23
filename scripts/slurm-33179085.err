@@ -1,0 +1,2 @@
+/export/spool/slurm/slurmd.spool/job33179085/slurm_script: line 18: 1401803 Killed                  julia --project=../ run_thc.jl
+slurmstepd: error: Detected 1 oom_kill event in StepId=33179085.batch. Some of the step tasks have been OOM Killed.
