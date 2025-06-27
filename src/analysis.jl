@@ -19,7 +19,7 @@ function global_volume_integral(ds, var)
     ΔV = ΔA.*Δz;
     var_array = zeros(size(time,1));
     for n in 1:size(time, 1)
-        var_t = ds[var][4+1:end-4, 1, 4+1:end-4, n]
+        var_t = ds[var][4+1:end-4, :, 4+1:end-4, n]
         wet = var_t.!=0.
         var_t[.!wet] .= NaN
         var_array[n] = nansum(
@@ -90,4 +90,29 @@ function get_ψ(ds)
         ψ[:,i,:] = Ψ_tmp
     end
     return ψ
+end
+
+
+function ε_analysis(ds)
+    Ra = ds.attrib["Ra"]
+    Pr = ds.attrib["Pr"]
+    ν = ds.attrib["ν"]
+    κ = ds.attrib["κ"]
+    b★ = ds.attrib["b★"]
+    H = ds.attrib["H"]
+    Lx = ds.attrib["Lx"]
+
+    #find the theoretical constraint on ε
+    ε_theory = κ .* H^(-1) .* 2 .* b★
+
+    #now find the the volume integrated simulation ε
+    ε_int = global_volume_integral(ds, "ε")
+    #find the volume averaged simulation ε
+    ε_avg = (ε_int) / (Lx * H)
+
+    #find the mean of ε_avg
+    ε_mean = nanmean(ε_avg)
+
+    return ε_theory, ε_avg, ε_mean
+    
 end
