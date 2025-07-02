@@ -110,9 +110,25 @@ function ε_analysis(ds)
     #find the volume averaged simulation ε
     ε_avg = (ε_int) / (Lx * H)
 
-    #find the mean of ε_avg
-    ε_mean = nanmean(ε_avg)
+    #find the mean of ε_avg --- ONLY over the equilibrium period
+    #assuming the last 10% of the time is the equilibrium period
+    equilibrium_start = round(Int, 0.9 * size(ε_avg, 1))
+    ε_avg_eq = ε_avg[equilibrium_start:end]
+    ε_mean = nanmean(ε_avg_eq)
 
     return ε_theory, ε_avg, ε_mean
     
+end
+
+function plot_ε_normalized(ds)
+    ε_theory, ε_avg, ε_mean = ε_analysis(ds)
+    Ra = ds.attrib["Ra"]
+    time = ds["time"][:]
+    time_norm = time ./ time[end]  # Normalize time
+
+    f = Figure()
+    ax = Axis(f[1,1], xlabel="Normalized Time", ylabel="Normalized ε", title="Comparison of ε and ε_theoretical for Ra = $Ra")
+    plot!(ax, time_norm, ε_avg/ε_theory)
+
+    return f
 end
