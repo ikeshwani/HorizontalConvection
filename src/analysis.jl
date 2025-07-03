@@ -158,9 +158,19 @@ end
 function plot_ε_normalized(ax,ds)
     ε_theory, ε_avg, ε_mean = ε_analysis(ds)
     Ra = ds.attrib["Ra"]
+    τ_eq = sqrt(Ra)
     time = ds["time"][:]
-    time_norm = time ./ time[end]  # Normalize time
+    time_norm = time ./ τ_eq  # Normalize time
 
     plot!(ax, time_norm, ε_avg/ε_theory, label = "Ra = $(Ra)")
 end
 
+function plot_ε_avg(ax,ds)
+    ε_theory, ε_avg, ε_mean = ε_analysis(ds)
+    Ra = ds.attrib["Ra"]
+    τ_eq = sqrt(Ra)
+    time = ds["time"][:]
+    time_norm = time ./ τ_eq  # Normalize time
+
+    plot!(ax, time_norm, ε_avg, label = "Ra = $(Ra)")
+end
