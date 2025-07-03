@@ -21,13 +21,48 @@ function global_volume_integral(ds, var)
     for n in 1:size(time, 1)
         var_t = ds[var][4+1:end-4, :, 4+1:end-4, n]
         wet = var_t.!=0.
-        var_t[.!wet] .= NaN
+        var_t[.!wet] .= NaN 
         var_array[n] = nansum(
             var_t .*
             ΔV,
             dims=(1,2,3)
         )[1,1,1]
     end  
+    return var_array
+end
+
+#function to find the volume averaged variable (generalized for χ or ε)
+function global_volume_avg(ds, var)
+    x = ds["xC"][4+1:end-4]; Nx = length(x);
+    z = ds["zC"][4+1:end-4]; Nz = length(z);
+    time = ds["time"][:];
+    Δx = reshape(diff(ds["xF"])[4+1:end-4], Nx,1,1);
+    Δz = reshape(diff(ds["zF"])[4+1:end-4], 1,1,Nz);
+    ΔA = Δx; #flat in y -- 2 dimensional
+    ΔV = ΔA.*Δz;
+    var_array = zeros(size(time,1));
+    for n in 1:size(time, 1)
+        var_t = ds[var][4+1:end-4, :, 4+1:end-4, n]
+        wet = var_t.!=0.
+        var_t[.!wet] .= NaN 
+
+         #volume integral over "wet" variable
+        integral = nansum(
+            var_t .*
+            ΔV,
+            dims=(1,2,3)
+        )[1,1,1]
+
+        #volume of wet ocean 
+        wet_volume = nansum(
+            wet .*
+            ΔV,
+            dims=(1,2,3)
+        )[1,1,1]
+
+        #now we find the volume averaged variable
+        var_array[n] = integral / wet_volume
+    end
     return var_array
 end
 
@@ -105,10 +140,10 @@ function ε_analysis(ds)
     #find the theoretical constraint on ε
     ε_theory = κ .* H^(-1) .* 2 .* b★
 
-    #now find the the volume integrated simulation ε
-    ε_int = global_volume_integral(ds, "ε")
-    #find the volume averaged simulation ε
-    ε_avg = (ε_int) / (Lx * H)
+    #find the global volume averaged simulation ε
+    #this function takes the global volume integral of ε
+    #and divides it by the volume of the wet ocean (so works for both hills & no hills)
+    ε_avg = global_volume_avg(ds, "ε")
 
     #find the mean of ε_avg --- ONLY over the equilibrium period
     #assuming the last 10% of the time is the equilibrium period
@@ -120,15 +155,12 @@ function ε_analysis(ds)
     
 end
 
-function plot_ε_normalized(ds)
+function plot_ε_normalized(ax,ds)
     ε_theory, ε_avg, ε_mean = ε_analysis(ds)
     Ra = ds.attrib["Ra"]
     time = ds["time"][:]
     time_norm = time ./ time[end]  # Normalize time
 
-    f = Figure()
-    ax = Axis(f[1,1], xlabel="Normalized Time", ylabel="Normalized ε", title="Comparison of ε and ε_theoretical for Ra = $Ra")
-    plot!(ax, time_norm, ε_avg/ε_theory)
-
-    return f
+    plot!(ax, time_norm, ε_avg/ε_theory, label = "Ra = $(Ra)")
 end
+

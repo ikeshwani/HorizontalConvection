@@ -27,7 +27,7 @@ end
 
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
-function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=GPU())
+function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=GPU())
     
     ## Constant parameters and functions
     H = 1.0            # vertical domain extent
@@ -36,11 +36,22 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     Ly = H/4 # meridional domain extent
     
     Pr = 1.0     # Prandtl number
+    
+    if numhill == 1
+        h₀_1 = h₀_frac * H
+        h₀_2 = 0.0
+    elseif numhill == 2
+        h₀_1 = h₀_frac * H
+        h₀_2 = h₀_frac * H
+    elseif numhill == 0
+        h₀_1 = 0.0
+        h₀_2 = 0.0
+    end
 
-    h₀ = h₀_frac*H
+    #h₀ = h₀_frac*H
     hill_length = Lx/32
-    hill_1(x) = (2/3)h₀ * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
-    hill_2(x) =      h₀ * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
+    hill_1(x) = (2/3)h₀_1 * exp(-(x-0.0Lx/2)^2 / 2hill_length^2)
+    hill_2(x) =      h₀_2 * exp(-(x-0.5Lx/2)^2 / 2hill_length^2)
     
     if Ny != 1
         channel_width = Ly/8
@@ -71,7 +82,15 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
         starttype = "zerostart"
     end
 
-    filename_prefix = string(runtype, "_h", h₀_frac, "_Ra", Ra, starttype) 
+    if numhill == 1
+        hill_number = "_onehill_"
+    elseif numhill == 2
+        hill_number = "_twohill_"
+    elseif numhill == 0
+        hill_number = "_flat_"
+    end
+
+    filename_prefix = string(runtype, hill_number, h₀_frac, "_Ra", Ra, starttype) 
 
     # ### The grid
 
@@ -142,8 +161,8 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
     # We use isotropic viscosity and diffusivities, `ν` and `κ` whose values are obtain from the
     # prescribed ``Ra`` and ``Pr`` numbers.
     
-    ν = sqrt(Pr * b★ * H^3 / Ra)  # Laplacian viscosity
-    κ = ν * Pr                     # Laplacian diffusivity
+    ν = sqrt(Pr * b★ * H^3 / Ra)  # Laplacian viscosity #change from H to Lx?
+    κ = ν / Pr                     # Laplacian diffusivity
     
     # ## Model instantiation
     #
@@ -304,7 +323,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, Nx=256, Ny=1, 
 
         filename = string("../output/", filename_prefix, "_oceanostics.nc")
         simulation.output_writers[:oceanostics] = NetCDFOutputWriter(model, oceanostics_diags,
-                                                            schedule = TimeInterval(10),
+                                                            schedule = TimeInterval(time_interval),
                                                             indices = indices,
                                                             filename = filename,
                                                             with_halos = true,
