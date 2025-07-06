@@ -280,15 +280,17 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
     	)
         simulation.output_writers
 
+        project_dir = joinpath("/Users/hfdrake/code/HorizontalConvection/output/", filename_prefix)
+
         simulation.output_writers[:checkpointer] = Checkpointer(
         						model,
         						schedule = TimeInterval(200),
-        						dir = "../output",
+        						dir = project_dir,
         						prefix = string(filename_prefix, "_checkpoint"),
         						cleanup = true)
 
 
-        filename = string("../output/", filename_prefix, "_buoyancy.nc")
+        filename = string(project_dir, "/buoyancy.nc")
         simulation.output_writers[:buoyancy] = NetCDFOutputWriter(model, (; b, chi=χ, ∫ϕz = bw),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
@@ -296,7 +298,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
                                                               global_attributes = global_attributes,
                                                               overwrite_existing = true)
 
-        filename = string("../output/", filename_prefix, "_velocities.nc")
+        filename = string(project_dir, "/velocities.nc")
         simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
@@ -304,7 +306,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
                                                               global_attributes = global_attributes,
                                                               overwrite_existing = true)
 
-        filename = string("../output/", filename_prefix, "_section_snapshots.nc")
+        filename = string(project_dir, "/section_snapshots.nc")
         simulation.output_writers[:section_snapshots] = NetCDFOutputWriter(model, (; b, ke, pe),
                                                               schedule = TimeInterval(1),
                                 			      indices = indices,
@@ -313,7 +315,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
                                                               global_attributes = global_attributes,
                                                               overwrite_existing = true)
 
-        filename = string("../output/", filename_prefix, "_zonal_time_means.nc")
+        filename = string(project_dir, "/zonal_time_means.nc")
         simulation.output_writers[:zonal_time_means] = NetCDFOutputWriter(model, (; b=b_avg_y),
                                                             schedule = AveragedTimeInterval(1, window=1),
                                                             filename = filename,
@@ -321,7 +323,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
                                                             global_attributes = global_attributes,
                                                             overwrite_existing = true)
 
-        filename = string("../output/", filename_prefix, "_oceanostics.nc")
+        filename = string(project_dir, "/oceanostics.nc")
         simulation.output_writers[:oceanostics] = NetCDFOutputWriter(model, oceanostics_diags,
                                                             schedule = TimeInterval(time_interval),
                                                             indices = indices,
