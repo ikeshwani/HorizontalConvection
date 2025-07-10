@@ -128,7 +128,13 @@ function get_ψ(ds)
 end
 
 
-function ε_analysis(ds)
+function dissipation_analysis(ds, var)
+#     this function can be used for ε or chi
+#     we return the constraint theorized by paperella and young (2003) (ε) and winters and young (2009) (χ)
+#     then we calculate the volume averaged dissipation variable
+#     and take the mean of the last 10% of the time (equilibrium period)
+
+
     Ra = ds.attrib["Ra"]
     Pr = ds.attrib["Pr"]
     ν = ds.attrib["ν"]
@@ -137,40 +143,46 @@ function ε_analysis(ds)
     H = ds.attrib["H"]
     Lx = ds.attrib["Lx"]
 
-    #find the theoretical constraint on ε
-    ε_theory = κ .* H^(-1) .* 2 .* b★
+    if var == "ε"
+        #find the theoretical constraint on ε
+        constraint = κ .* H^(-1) .* 2 .* b★
+    elseif var == "χ"
+        #find the theoretical constraint on χ
+        constraint = 4.57 * (κ^(1/3) * (2 * b★)^(7/3)) / (Pr^(1/3) * H)
+    end
 
     #find the global volume averaged simulation ε
     #this function takes the global volume integral of ε
     #and divides it by the volume of the wet ocean (so works for both hills & no hills)
-    ε_avg = global_volume_avg(ds, "ε")
+    vol_avg = global_volume_avg(ds, var)
 
     #find the mean of ε_avg --- ONLY over the equilibrium period
     #assuming the last 10% of the time is the equilibrium period
-    equilibrium_start = round(Int, 0.9 * size(ε_avg, 1))
-    ε_avg_eq = ε_avg[equilibrium_start:end]
-    ε_mean = nanmean(ε_avg_eq)
+    equilibrium_start = round(Int, 0.9 * size(vol_avg, 1))
+    vol_avg_eq = vol_avg[equilibrium_start:end]
+    time_mean = nanmean(vol_avg_eq)
 
-    return ε_theory, ε_avg, ε_mean
-    
+    return constraint, vol_avg, time_mean
+
 end
 
-function plot_ε_normalized(ax,ds)
-    ε_theory, ε_avg, ε_mean = ε_analysis(ds)
+
+function plot_normalized(ax,ds,var)
+    constraint, diss_avg, diss_mean = dissipation_analysis(ds, var)
     Ra = ds.attrib["Ra"]
     τ_eq = sqrt(Ra)
     time = ds["time"][:]
     time_norm = time ./ τ_eq  # Normalize time
 
-    plot!(ax, time_norm, ε_avg/ε_theory, label = "Ra = $(Ra)")
+    plot!(ax, time_norm, diss_avg/constraint, label = "Ra = $(Ra)")
 end
 
-function plot_ε_avg(ax,ds)
-    ε_theory, ε_avg, ε_mean = ε_analysis(ds)
+function plot_avg(ax,ds,var)
+    constraint, diss_avg, diss_mean = dissipation_analysis(ds, var)
     Ra = ds.attrib["Ra"]
     τ_eq = sqrt(Ra)
     time = ds["time"][:]
     time_norm = time ./ τ_eq  # Normalize time
 
-    plot!(ax, time_norm, ε_avg, label = "Ra = $(Ra)")
+    plot!(ax, time_norm, diss_avg, label = "Ra = $(Ra)")
 end

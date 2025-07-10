@@ -281,6 +281,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
         simulation.output_writers
 
         project_dir = joinpath("/Users/hfdrake/code/HorizontalConvection/output/", filename_prefix)
+        ##mkdir(project_dir)
 
         simulation.output_writers[:checkpointer] = Checkpointer(
         						model,
