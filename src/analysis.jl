@@ -43,8 +43,8 @@ function global_volume_avg(ds, var)
     var_array = zeros(size(time,1));
     for n in 1:size(time, 1)
         var_t = ds[var][4+1:end-4, :, 4+1:end-4, n]
-        wet = var_t.!=0.
-        var_t[.!wet] .= NaN 
+        wet = ds[var][4+1:end-4, :, 4+1:end-4, 3].!=0.
+        var_t[.!wet] .= NaN
 
          #volume integral over "wet" variable
         integral = nansum(
@@ -61,7 +61,7 @@ function global_volume_avg(ds, var)
         )[1,1,1]
 
         #now we find the volume averaged variable
-        var_array[n] = integral / wet_volume
+        var_array[n] = integral ./ wet_volume
     end
     return var_array
 end
@@ -185,4 +185,62 @@ function plot_avg(ax,ds,var)
     time_norm = time ./ τ_eq  # Normalize time
 
     plot!(ax, time_norm, diss_avg, label = "Ra = $(Ra)")
+end
+
+
+function diss_norm_eq_subplots(datasets, var, CR; cols=2, main_title="")
+    n_datasets = length(datasets)
+    rows = ceil(Int, n_datasets / cols)
+    
+    fig = Figure(size=(500*cols + 100, 360*rows))  # Extra width for single colorbar
+    
+    # Add main title if provided
+    if !isempty(main_title)
+        Label(fig[0, :], main_title, fontsize=25, tellwidth=false)
+    end
+    
+    heatmaps = []  # Store heatmap objects
+    hill_maps = [] #store heatmap for hills
+    
+    for (i, ds) in enumerate(datasets)
+        row = ceil(Int, i / cols)
+        col = ((i - 1) % cols) + 1
+        
+        # Get data for this dataset
+        diss_var = ds[var][4+1:end-4, 1, 4+1:end-4, :]
+        Ra = ds.attrib["Ra"]
+        time = ds["time"][:]
+        x = ds["xC"][4+1:end-4]
+        z = ds["zC"][4+1:end-4]
+        equilibrium_start = round(Int, 0.9 * size(time, 1))
+        var_eq = diss_var[:, :, equilibrium_start]
+
+        #adding a wet mask so the hills are a different color in the heatmap
+        wet = var_eq.!= 0
+        wet_masked = Float64.(copy(wet))
+        wet_masked[wet] .= NaN # Set wet areas to NaN for masking
+
+        var_theory = dissipation_analysis(ds, var)[1]
+        var_norm = var_eq ./ var_theory
+
+        # Create subplot
+        ax = Axis(fig[row, col], 
+                xlabel="x", ylabel="z", 
+                title="Ra = $Ra")
+        hm = heatmap!(ax, x, z, var_norm, colorrange=CR, colormap=:dense)
+        hm_hill = heatmap!(ax, x, z, wet_masked[:,:], colormap=:deep)
+        push!(heatmaps, hm)
+        push!(hill_maps, hm_hill)
+    end
+    
+    # Add single colorbar on the right side
+    if var == "χ"
+        cblabel = L"\frac{χ}{χ_{theoretical}}"
+    elseif var == "ε"
+        cblabel = L"\frac{ε}{ε_{theoretical}}"
+    end
+
+    Colorbar(fig[:, end+1], heatmaps[1], label=cblabel)
+
+    return fig
 end
