@@ -277,3 +277,72 @@ function diss_norm_eq_subplots(datasets, datasets_buoy, var, CR; cols=2, main_ti
 
     return fig
 end
+
+
+
+# Function to plot the streamfunction and buoyancy contours 
+
+function streamfunction_subplots(buoy_datasets, vel_datasets; cols=2, main_title="")
+    n_datasets = length(buoy_datasets)
+    rows = ceil(Int, n_datasets / cols)
+    
+    fig = Figure(size=(500*cols + 150, 300*rows))
+    
+    # Add main title if provided
+    if !isempty(main_title)
+        Label(fig[0, :], main_title, fontsize=20, tellwidth=false)
+    end
+    
+    heatmaps = []  # Store heatmap objects for shared colorbar
+    
+    for (i, (ds_b, ds_v)) in enumerate(zip(buoy_datasets, vel_datasets))
+        row = ceil(Int, i / cols)
+        col = ((i - 1) % cols) + 1
+        
+        # Get spatial coordinates and time
+        x = ds_v["xC"][4+1:end-4]
+        z = ds_v["zC"][4+1:end-4]
+        time = ds_v["time"]
+        eq_start = round(Int, 0.9 * size(time, 1))
+        
+        # Process buoyancy data
+        b_eq = ds_b["b"][4+1:end-4, 1, 4+1:end-4, eq_start:end]
+        wet = b_eq .!= 0
+        b_eq[.!wet] .= NaN
+        b_avg = nanmean(b_eq, dims=3)
+        b_avg_2d = dropdims(b_avg, dims=(3))
+
+        #create a mask for the wet points
+        wet_mask = Float64.(copy(wet))
+        wet_mask[wet] .= NaN  # Set wet points to NaN
+        
+        # Process streamfunction data
+        ψ = get_ψ(ds_v)
+        ψ_eq = ψ[:, :, eq_start:end]
+        ψ_avg = nanmean(ψ_eq, dims=3)
+        ψ_avg_2d = dropdims(ψ_avg, dims=(3))
+        
+        # Get Ra for title
+        Ra = ds_b.attrib["Ra"]
+        
+        # Create subplot
+        ax = Axis(fig[row, col], 
+                xlabel="x", ylabel="z", 
+                title="Ra = $Ra")
+        
+        # Create heatmap and contour
+        hm = heatmap!(ax, x, z, -ψ_avg_2d, 
+                     colormap=(:balance, 0.9), 
+                     colorrange=((-nanmaximum(ψ_avg_2d)), (nanmaximum(ψ_avg_2d))))
+        #plot hills as a different color
+        heatmap!(ax, x, z, wet_mask[:,:,1], colormap=:deep)
+        contour!(ax, x, z, b_avg_2d, labels=true, levels=10, linewidth=2)
+        
+        push!(heatmaps, hm)
+    end
+    
+    # Add single colorbar on the right side
+    Colorbar(fig[:, end+1], heatmaps[1], label="Streamfunction (ψ)")
+    
+    return fig
+end
