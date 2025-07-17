@@ -188,7 +188,7 @@ function plot_avg(ax,ds,var)
 end
 
 
-function diss_norm_eq_subplots(datasets, var, CR; cols=2, main_title="")
+function diss_norm_eq_subplots(datasets, datasets_buoy, var, CR; cols=2, main_title="")
     n_datasets = length(datasets)
     rows = ceil(Int, n_datasets / cols)
     
@@ -213,22 +213,55 @@ function diss_norm_eq_subplots(datasets, var, CR; cols=2, main_title="")
         x = ds["xC"][4+1:end-4]
         z = ds["zC"][4+1:end-4]
         equilibrium_start = round(Int, 0.9 * size(time, 1))
-        var_eq = diss_var[:, :, equilibrium_start]
+        #now this array contains values only for the equilibrium period
+        var_eq = diss_var[:, :, equilibrium_start:end]
 
         #adding a wet mask so the hills are a different color in the heatmap
         wet = var_eq.!= 0
         wet_masked = Float64.(copy(wet))
         wet_masked[wet] .= NaN # Set wet areas to NaN for masking
 
-        var_theory = dissipation_analysis(ds, var)[1]
-        var_norm = var_eq ./ var_theory
+        #we want to take the average of the data over the equilibrium time
+        var_eq_avg = nanmean(var_eq, dims=3)
+        var_eq_avg_2d = dropdims(var_eq_avg; dims=3)
 
-        # Create subplot
+
+
+        var_theory = dissipation_analysis(ds, var)[1]
+        var_norm = var_eq_avg_2d ./ var_theory
+
+        # ----------- now for the buoyancy contours -------------------
+        buoy_ds = datasets_buoy[i]
+        b = buoy_ds["b"][4+1:end-4, 1, 4+1:end-4, :]
+        #okay soooo the fucked issue is that the time_interval that the data sets were outputting at were different for oceanostics data and buoy data
+        #i fixed this for the new sims, but for the prelim work im still using some older data (and im not tryna rerun all my sims)
+        #so i need to make sure i recalculate the equilibrium time for buoyancy
+        #ill be able to remove these steps in the future assuming I use newly run data 
+
+        time_b = buoy_ds["time"][:] 
+        eq_start_b = round(Int, 0.9 * size(time_b, 1))
+        b_eq = b[:, :, eq_start_b:end]
+        wet_b = b_eq.!= 0
+        b_eq[.!wet_b] .= NaN # Set wet areas to NaN so it doesnt show up in contours
+        
+        #similarly now we want to take the average of the buoyancy data over the equilibrium time
+        b_eq_avg = nanmean(b_eq, dims=3)
+        b_eq_avg_2d = dropdims(b_eq_avg; dims=3)
+
+        # ------------ now its time to plot -------------- letsgooooooooo
         ax = Axis(fig[row, col], 
                 xlabel="x", ylabel="z", 
                 title="Ra = $Ra")
+        # -------- heatmaps for the dissipation variables --------------
         hm = heatmap!(ax, x, z, var_norm, colorrange=CR, colormap=:dense)
-        hm_hill = heatmap!(ax, x, z, wet_masked[:,:], colormap=:deep)
+
+        # ---------- adding hills as a different color -----------------
+        hm_hill = heatmap!(ax, x, z, wet_masked[:,:,1], colormap=:deep)
+        
+        # ---------- adding buoyancy contours over the heatmap ----------
+        contour!(ax, x, z, b_eq_avg_2d, linewidth=1.0, color=:red, levels=LinRange(-1, 1, 15))
+
+
         push!(heatmaps, hm)
         push!(hill_maps, hm_hill)
     end
