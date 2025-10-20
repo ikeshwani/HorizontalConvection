@@ -90,7 +90,11 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
         hill_number = "_flat_"
     end
 
+
+
+
     filename_prefix = string(runtype, hill_number, h₀_frac, "_Ra", Ra, starttype) 
+    filename_grid_tests = string(Nx, "_", Nz)
 
     # ### The grid
 
@@ -131,7 +135,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
     
     b★ = 1.0
     if Ny == 1
-        @inline bˢ_flat(x, t, p) = p.b★ * sin(π * x / p.Lx)
+        @inline bˢ_flat(x, t, p) = p.b★ * sin(π * x / p.Lx) 
         b_bcs = FieldBoundaryConditions(top = ValueBoundaryCondition(bˢ_flat, parameters=(; b★, Lx)))
     elseif Ny != 1
         @inline bˢ(x, y, t, p) = p.b★ * sin(π * x / p.Lx)
@@ -276,11 +280,14 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
             "Ly" => Ly,
             "H"  => H,
             "b★" => b★,
+            "Nx" => Nx,
+            "Ny" => Ny, 
+            "Nz" => Nz
 
     	)
         simulation.output_writers
 
-        project_dir = joinpath("/Users/hfdrake/code/HorizontalConvection/output/", filename_prefix)
+        project_dir = joinpath("/Users/hfdrake/code/HorizontalConvection/output/gridtesting", filename_grid_tests) #filename_prefix)
         ##mkdir(project_dir)
 
         simulation.output_writers[:checkpointer] = Checkpointer(

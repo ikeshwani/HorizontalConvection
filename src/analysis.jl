@@ -5,6 +5,7 @@ using CairoMakie
 using Oceananigans.Fields
 using Oceananigans.AbstractOperations: volume
 using NaNStatistics
+using Makie.Colors
 
 
 #global volume integral function to generalize find χ and find ϵ
@@ -230,6 +231,9 @@ function diss_norm_eq_subplots(datasets, datasets_buoy, var, CR; cols=2, main_ti
         var_theory = dissipation_analysis(ds, var)[1]
         var_norm = var_eq_avg_2d ./ var_theory
 
+        #lets try plotting the log of the heatmap
+        log_var_norm = log10.(var_norm)
+
         # ----------- now for the buoyancy contours -------------------
         buoy_ds = datasets_buoy[i]
         b = buoy_ds["b"][4+1:end-4, 1, 4+1:end-4, :]
@@ -248,16 +252,35 @@ function diss_norm_eq_subplots(datasets, datasets_buoy, var, CR; cols=2, main_ti
         b_eq_avg = nanmean(b_eq, dims=3)
         b_eq_avg_2d = dropdims(b_eq_avg; dims=3)
 
+        Nx = ds.attrib["Nx"]
+        Nz = ds.attrib["Nz"]
+
         # ------------ now its time to plot -------------- letsgooooooooo
         ax = Axis(fig[row, col], 
-                xlabel="x", ylabel="z", 
-                title="Ra = $Ra")
+                xlabel=L"\hat{x}", ylabel=L"\hat{z}", 
+                title="Resolution = $Nx, $Nz")
+
+        ax.titlesize = 39
+        ax.xlabelsize = 33
+        ax.ylabelsize = 33
+        ax.xticklabelsize = 25
+        ax.yticklabelsize = 25
+
         # -------- heatmaps for the dissipation variables --------------
-        hm = heatmap!(ax, x, z, var_norm, colorrange=CR, colormap=:dense)
+        if var == "χ"
+            color = :delta
+        elseif var == "ε"
+            color = :curl
+        end
+
+        print(maximum(log_var_norm))
+        print(minimum(log_var_norm))
+
+        hm = heatmap!(ax, x, z, log_var_norm; colorrange=CR, colormap=color)
 
         # ---------- adding hills as a different color -----------------
-        hm_hill = heatmap!(ax, x, z, wet_masked[:,:,1], colormap=:deep)
-        
+        hm_hill = heatmap!(ax, x, z, wet_masked[:,:,1], colormap=:turbid)
+
         # ---------- adding buoyancy contours over the heatmap ----------
         contour!(ax, x, z, b_eq_avg_2d, linewidth=1.0, color=:red, levels=LinRange(-1, 1, 15))
 
@@ -273,7 +296,8 @@ function diss_norm_eq_subplots(datasets, datasets_buoy, var, CR; cols=2, main_ti
         cblabel = L"\frac{ε}{ε_{theoretical}}"
     end
 
-    Colorbar(fig[:, end+1], heatmaps[1], label=cblabel)
+    Colorbar(fig[:, end+1], heatmaps[1], label=cblabel, labelsize=38, ticklabelsize=25)
+
 
     return fig
 end
@@ -327,22 +351,28 @@ function streamfunction_subplots(buoy_datasets, vel_datasets; cols=2, main_title
         
         # Create subplot
         ax = Axis(fig[row, col], 
-                xlabel="x", ylabel="z", 
+                xlabel=L"\hat{x}", ylabel=L"\hat{z}", 
                 title="Ra = $Ra")
-        
+
+        ax.titlesize = 39
+        ax.xlabelsize = 33
+        ax.ylabelsize = 33
+        ax.xticklabelsize = 25
+        ax.yticklabelsize = 25
+
         # Create heatmap and contour
         hm = heatmap!(ax, x, z, -ψ_avg_2d, 
                      colormap=(:balance, 0.9), 
                      colorrange=((-nanmaximum(ψ_avg_2d)), (nanmaximum(ψ_avg_2d))))
         #plot hills as a different color
-        heatmap!(ax, x, z, wet_mask[:,:,1], colormap=:deep)
+        heatmap!(ax, x, z, wet_mask[:,:,1], colormap=:turbid)
         contour!(ax, x, z, b_avg_2d, labels=true, levels=10, linewidth=2)
         
         push!(heatmaps, hm)
     end
     
     # Add single colorbar on the right side
-    Colorbar(fig[:, end+1], heatmaps[1], label="Streamfunction (ψ)")
-    
+    Colorbar(fig[:, end+1], heatmaps[1], label=L"\text{Nondimensional Streamfunction } \hat{\psi}", labelsize=38, ticklabelsize=25)
+
     return fig
 end
