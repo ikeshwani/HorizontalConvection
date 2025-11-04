@@ -12,7 +12,7 @@
 
 # Run the julia script and save julia's update messages to the file out.txt
 module load cuda/11.7.1
-module load julia/1.9.3
+module load julia/1.10.4
 
-cd /pub/$USER/code/HorizontalConvection/src
+cd /pub/$USER/code/HorizontalConvection/scripts
 julia --project=../ run_thc.jl
