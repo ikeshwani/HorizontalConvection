@@ -5,10 +5,16 @@ version = "0.1.1"
 
 [deps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
 IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 NaNStatistics = "b946abbf-3ea7-4610-9019-9858bfdeaf2d"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 Oceanostics = "d0ccf422-c8fb-49b5-a76d-74acdde946ac"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[compat]
+ColorSchemes = "3.31.0"
+Makie = "0.21.5"
