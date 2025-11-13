@@ -287,6 +287,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 1, N
             "Ly" => Ly,
             "H"  => H,
             "b★" => b★,
+            "b_init" => b_init,
             "Nx" => Nx,
             "Ny" => Ny, 
             "Nz" => Nz
@@ -309,7 +310,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 1, N
         simulation.output_writers[:buoyancy] = NetCDFWriter(model, (; b, chi=χ, ∫ϕz = bw),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
-                                                              with_halos = true,
+                                                              with_halos = false,
                                                               global_attributes = global_attributes,
                                                               overwrite_existing = true)
 
@@ -317,7 +318,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 1, N
         simulation.output_writers[:velocities] = NetCDFWriter(model, (; u, v, w),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
-                                                              with_halos = true,
+                                                              with_halos = false,
                                                               global_attributes = global_attributes,
                                                               overwrite_existing = true)
 
@@ -334,7 +335,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 1, N
         simulation.output_writers[:zonal_time_means] = NetCDFWriter(model, (; b=b_avg_y),
                                                             schedule = AveragedTimeInterval(1, window=1),
                                                             filename = filename,
-                                                            with_halos = true,
+                                                            with_halos = false,
                                                             global_attributes = global_attributes,
                                                             overwrite_existing = true)
 
