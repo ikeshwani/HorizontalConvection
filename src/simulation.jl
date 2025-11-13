@@ -14,8 +14,9 @@
 using Oceananigans
 using Printf
 using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Solvers: ConjugateGradientPoissonSolver
 using Oceananigans.Grids: Center
-using Oceananigans.BuoyancyModels: Zᶜᶜᶜ
+using Oceananigans.BuoyancyFormulations: Zᶜᶜᶜ
 using Oceanostics
 
 @inline function PotentialEnergy(model)
@@ -27,7 +28,7 @@ end
 
 @inline bz_ccc(i, j, k, grid, b) = - b[i, j, k] * Zᶜᶜᶜ(i, j, k, grid)
 
-function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=GPU())
+function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 1, Nx=256, Ny=1, Nz=32, b_init=0.0, output_writer=true, advection=true, architecture=CPU())
     
     ## Constant parameters and functions
     H = 1.0            # vertical domain extent
@@ -172,6 +173,11 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
     #
     # We instantiate the model with the fifth-order WENO advection scheme, a 3rd order
     # Runge-Kutta time-stepping scheme, and a `BuoyancyTracer`.
+
+    # Rather than using the default FFT-based pressure_solver for NonhydrostaticModels on ImmersedBoundaryGrid
+    # we define an experimental but improved pressure solver ConjugateGradientPoissonSolver
+
+    pressure_solver_new = ConjugateGradientPoissonSolver(grid)
     
     model = NonhydrostaticModel(; grid,
                                 advection = advection_scheme,
@@ -180,6 +186,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
                                 buoyancy = BuoyancyTracer(),
                                 closure = ScalarDiffusivity(; ν, κ),
                                 hydrostatic_pressure_anomaly = CenterField(grid), #attempt to fix weird bug
+                                pressure_solver = pressure_solver_new,
                                 boundary_conditions = (; b=b_bcs))
     
     # ## Simulation set-up
@@ -232,9 +239,9 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
     # Define online diagnostics
     
     #using Oceanostics to define online diagnostics
-    ke = KineticEnergy(model)
-    ε = KineticEnergyDissipationRate(model)
-    χ = TracerVarianceDissipationRate(model, :b)
+    ke = KineticEnergyEquation.KineticEnergy(model)
+    ε = KineticEnergyEquation.DissipationRate(model)
+    χ = TracerVarianceEquation.TracerVarianceDissipationRate(model, :b)
 
     oceanostics_diags = (; ke, ε, χ)
 
@@ -253,12 +260,12 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
 
     set!(simulation.model, b = B₀);
 
-    # We create a `JLD2OutputWriter` that saves the speed, vorticity, buoyancy dissipation,
-    # kineatic energy density, and potential energy density. Because we may want to post-process
+    # We create a `NETCDFOutputWriter` that saves the speed, vorticity, buoyancy dissipation,
+    # kinetic energy density, and potential energy density. Because we may want to post-process
     # to post-process prognostic fields in ways that satisfy the boundary conditions,
     # we use the `with_halos = true`.
     #
-    # We then add the `JLD2OutputWriter` to the `simulation`.
+    # We then add the `NETCDFOutputWriter` to the `simulation`.
 
     if Ny == 1
         indices = (:,1,:)
@@ -287,7 +294,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
     	)
         simulation.output_writers
 
-        project_dir = joinpath("/Users/hfdrake/code/HorizontalConvection/output/gridtesting", filename_grid_tests) #filename_prefix)
+        project_dir = joinpath("/Users/hfdrake/code/HorizontalConvection/output/new_pressureSolver", filename_grid_tests) #filename_prefix)
         ##mkdir(project_dir)
 
         simulation.output_writers[:checkpointer] = Checkpointer(
@@ -299,7 +306,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
 
 
         filename = string(project_dir, "/buoyancy.nc")
-        simulation.output_writers[:buoyancy] = NetCDFOutputWriter(model, (; b, chi=χ, ∫ϕz = bw),
+        simulation.output_writers[:buoyancy] = NetCDFWriter(model, (; b, chi=χ, ∫ϕz = bw),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
@@ -307,7 +314,7 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
                                                               overwrite_existing = true)
 
         filename = string(project_dir, "/velocities.nc")
-        simulation.output_writers[:velocities] = NetCDFOutputWriter(model, (; u, v, w),
+        simulation.output_writers[:velocities] = NetCDFWriter(model, (; u, v, w),
                                                               schedule = TimeInterval(time_interval),
                                                               filename = filename,
                                                               with_halos = true,
@@ -315,16 +322,16 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
                                                               overwrite_existing = true)
 
         filename = string(project_dir, "/section_snapshots.nc")
-        simulation.output_writers[:section_snapshots] = NetCDFOutputWriter(model, (; b, ke, pe),
+        simulation.output_writers[:section_snapshots] = NetCDFWriter(model, (; b, ke, pe),
                                                               schedule = TimeInterval(1),
-                                			      indices = indices,
+                                			                  indices = indices,
                                                               filename = filename,
-                                                              with_halos = true,
+                                                              with_halos = false,
                                                               global_attributes = global_attributes,
                                                               overwrite_existing = true)
 
         filename = string(project_dir, "/zonal_time_means.nc")
-        simulation.output_writers[:zonal_time_means] = NetCDFOutputWriter(model, (; b=b_avg_y),
+        simulation.output_writers[:zonal_time_means] = NetCDFWriter(model, (; b=b_avg_y),
                                                             schedule = AveragedTimeInterval(1, window=1),
                                                             filename = filename,
                                                             with_halos = true,
@@ -332,11 +339,11 @@ function HorizontalConvectionSimulation(; Ra=1e11, h₀_frac=0.6, numhill = 2, N
                                                             overwrite_existing = true)
 
         filename = string(project_dir, "/oceanostics.nc")
-        simulation.output_writers[:oceanostics] = NetCDFOutputWriter(model, oceanostics_diags,
+        simulation.output_writers[:oceanostics] = NetCDFWriter(model, oceanostics_diags,
                                                             schedule = TimeInterval(time_interval),
                                                             indices = indices,
                                                             filename = filename,
-                                                            with_halos = true,
+                                                            with_halos = false,
                                                             global_attributes = global_attributes,
                                                             overwrite_existing = true)
 
