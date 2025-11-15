@@ -11,16 +11,19 @@ using Makie.Colors
 #global volume integral function to generalize find χ and find ϵ
 
 function global_volume_integral(ds, var)
-    x = ds["xC"][4+1:end-4]; Nx = length(x);
-    z = ds["zC"][4+1:end-4]; Nz = length(z);
-    time = ds["time"][:];
-    Δx = reshape(diff(ds["xF"])[4+1:end-4], Nx,1,1);
-    Δz = reshape(diff(ds["zF"])[4+1:end-4], 1,1,Nz);
-    ΔA = Δx; #flat in y -- 2 dimensional
-    ΔV = ΔA.*Δz;
-    var_array = zeros(size(time,1));
+    x = ds["xC"][:]
+    Nx = ds.attrib["Nx"]
+    z = ds["zC"][:]
+    Nz = ds.attrib["Nz"]
+    halo = (length(x) - Nx) / 2
+    time = ds["time"][:]
+    Δx = reshape(diff(ds["xF"])[halo+1:end-halo], Nx,1,1)
+    Δz = reshape(diff(ds["zF"])[halo+1:end-halo], 1,1,Nz)
+    ΔA = Δx #flat in y -- 2 dimensional
+    ΔV = ΔA.*Δz
+    var_array = zeros(size(time,1))
     for n in 1:size(time, 1)
-        var_t = ds[var][4+1:end-4, :, 4+1:end-4, n]
+        var_t = ds[var][halo+1:end-halo, :, halo+1:end-halo, n]
         wet = var_t.!=0.
         var_t[.!wet] .= NaN 
         var_array[n] = nansum(
@@ -34,8 +37,11 @@ end
 
 #function to find the volume averaged variable (generalized for χ or ε)
 function global_volume_avg(ds, var)
-    x = ds["xC"][4+1:end-4]; Nx = length(x);
-    z = ds["zC"][4+1:end-4]; Nz = length(z);
+    Nx = ds.attrib["Nx"]
+    Nz = ds.attrib["Nz"]
+    x = ds["xC"][4+1:end-4]
+    z = ds["zC"][4+1:end-4]
+    halo = (length(x) - Nx) / 2
     time = ds["time"][:];
     Δx = reshape(diff(ds["xF"])[4+1:end-4], Nx,1,1);
     Δz = reshape(diff(ds["zF"])[4+1:end-4], 1,1,Nz);
@@ -168,8 +174,11 @@ function dissipation_analysis(ds, var)
 end
 
 
-function plot_normalized(ax,ds,var)
-    constraint, diss_avg, diss_mean = dissipation_analysis(ds, var)
+function plot_normalized(ax,ds,var,version)
+    if version == "100"
+        constraint, diss_avg, diss_mean = dissipation_analysis_v100(ds, var)
+    elseif version == "91"
+        constraint, diss_avg, diss_mean = dissipation_analysis(ds, var)
     Ra = ds.attrib["Ra"]
     τ_eq = sqrt(Ra)
     time = ds["time"][:]
@@ -375,4 +384,5 @@ function streamfunction_subplots(buoy_datasets, vel_datasets; cols=2, main_title
     Colorbar(fig[:, end+1], heatmaps[1], label=L"\text{Nondimensional Streamfunction } \hat{\psi}", labelsize=38, ticklabelsize=25)
 
     return fig
+end
 end
