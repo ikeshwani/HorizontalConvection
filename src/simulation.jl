@@ -11,6 +11,10 @@
 # under the effect of gravity. The only forcing on the fluid comes from a prescribed, non-uniform
 # buoyancy at the top-surface of the domain.
 
+#physical constants 
+const Ω = 7.292115e-5 # earth's rotation rate in s⁻¹
+const R = 6.371e6 # earth's radius in m
+
 using Oceananigans
 using Printf
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -137,6 +141,202 @@ function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
         @inline bˢ(x, y, t, p) = p.b★ * sin(π * x / p.Lx) * seasonal_forcing(t)
         return bˢ
     end
+end
+
+# construct the beta-plane configuration of the coriolis parameters
+
+struct CoriolisConfig
+    enabled::Bool
+    scheme::Symbol #:fplane or :betaplane
+    f₀::Float64
+    β::Float64
+    latitude_south::Float64
+    latitude_north::Float64
+    reference_latitude::Float64
+end
+
+function CoriolisConfig(;
+    enabled = false, 
+    scheme = :betaplane,
+    latitude_south = -90.0, 
+    latitude_north = 0.0,
+    reference_latitude = nothing
+)
+
+"""
+Constructs the coriolis force for the simulation,
+    enabled : whether or not to include coriolis force
+    scheme : :fplane - constant f or :BetaPlane - traditional beta plane where f varies linearly with latitude_north
+                in my simulation x is the meridional direction so f varies with x in the beta plane approx
+    latitude_south : the southern latitude boundary in degrees @ x = -Lx/2
+    latitude_north : the northern latitude boundary in degrees @ x = Lx/2
+    reference_latitude : this is for scheme=:fplane , the reference_latitude 
+
+    BetaPlane approximation - 
+        - f(x) = f₀ + β L_x
+        - where fₒ is the coriolis parameter evaluated at x = 0 
+        - β = df/dx for x axis as the meridional direction
+        - we can use earth's rotation rate and radius
+            Ω = 7.292115e-5 s⁻¹ 
+            R = 6.371e6 m
+"""
+
+if scheme == :betaplane
+    #calculate f at domain center 
+    φ_center = (latitude_south + latitude_north) / 2
+    f₀ = 2 * Ω * sind(φ_center)
+
+    # now we need to calculate β = df/dx where x is the northward direction
+    """
+    okay so β = df/dφ * dφ/dx = > using chain rule
+    dx = R dφ because of arclength relationship
+    therfore, β = 2 Ω cos(φ) / R
+    """
+
+    φ_rad = deg2rad(φ_center) # convert to radians
+    β = (2 * Ω * cos(φ_rad)) / R
+    ref_lat = φ_center 
+
+else #:fplane
+    ref_lat  = reference_latitude !== nothing ? reference_latitude :
+                (latitude_south + latitude_north) / 2
+    
+    f₀ = 2 * Ω * sind(ref_lat)
+    β = 0.0 
+end
+
+return CoriolisConfig(enabled, scheme, f₀, β, latitude_south, latitude_north, ref_lat)
+end
+
+function make_coriolis(coriolis_config::CoriolisConfig, domain::DomainConfig)
+    """
+    this function creates the coriolis object for the HorizontalConvectionSimulation model
+        if we don't want rotation it returns nothing 
+
+        for β-plane it adjusts β based on actual domain size to ensure:
+            f(x=-Lx/2) = f(latitude_south)
+            f(x=Lx/2) = f(latitude_north)
+    """
+    if !coriolis_config.enabled # if not enabled return nothing for coriolis
+        return nothing
+    end
+
+    if coriolis_config.scheme == :fplane
+        return FPlane(f = coriolis_config.f₀)
+
+    else # :betaplane
+        # calculate f at boundaries
+        f_south = 2 * Ω * sind(coriolis_config.latitude_south)
+        f_north = 2 * Ω * sind(coriolis_config.latitude_north)
+
+        #calculate β from domain
+        # f(x) = f₀ + β*xC
+
+        Lx = domain.Lx
+        β = (f_north - f_south) / Lx
+        f₀ = (f_south + f_north) / 2
+
+        return BetaPlane(f₀ = f₀, β = Β)
+    end
+end
+
+# Wind forcing constructor
+
+struct WindForcing
+    enabled::Bool
+    τy::Float64
+    spatial_profile::Union{Function, Nothing}
+    #can add a temporal profile here later if need be
+end
+
+function WindForcing(; enabled=false, τy=0.0, 
+                        spatial_profile=nothing)
+
+    """
+    this function configures the wind stress forcing for the simulation
+        I left this for custom wind forcings 
+
+    example: southern westerly wind:
+    wind = WindForcing(enabled=true, τy =-1e-4 #westward stress negative y
+                        spatial_profile = (x,y) -> exp(-((x - x_center)/width)^2)
+                        )
+    """
+    return WindForcing(enabled, τy, spatial_profile)
+end
+
+#here is a helper function for the southern ocean westerlies
+
+function SouthernWesterlies(; domain::DomainConfig, τ_magnitude=1e-4,
+                            center_latitude = -50.0, width_degrees=10.0)
+
+    """
+    we want our winds to mimic the westerly winds , so they should point in the negative y-direction
+        the winds should be confined to the southern hemisphere
+        they can be characterized by a gaussian spatial_profile
+        neumann boundary conditions
+
+        domain: will give us the latitude Latitude range
+        τ_magnitude: peak wind stress magnitude 
+        center_latitude : latitude of the peak wind
+        width_degrees: the width in degrees of latitude of the gaussian for winds
+
+    """
+
+    #we need to map our latitude to x-coordinates
+    #[-Lx/2, Lx/2 ] corresponds to lat_south, lat_north
+    lat_south = -90.0
+    lat_north = 0.0
+    Lx= domain.Lx
+
+    lat_center = (lat_south + lat_north) / 2
+    
+    #convert center_latitude to x coordinates
+    x_center = (center_latitude - lat_center) * Lx / (lat_north - lat_south)
+
+    #convert width from degrees to x-coordinates
+    x_width = width_degrees * Lx / (lat_north - lat_south)
+
+    #gaussian spatial profile
+    spatial_profile = (x,y) -> exp(-((x-x_center) / x_width)^2)
+
+    return WindForcing(
+        enabled = true,
+        τy = -τ_magnitude,
+        spatial_profile = spatial_profile
+    )
+end
+
+
+function make_wind_stress(wind::WindForcing, domain::DomainConfig)
+    """
+    this function creates the ZONAL wind stress boundary condition
+        returns fluxboundaryconditions for v, or nothing if disabled
+    """
+
+    if !wind.enabled
+        return nothing
+    end
+
+    if domain.Ny == 1
+        #2D case -- zonal wind requires a 3d simulation
+        @warn "Zonal wind forcing requested but Ny=1 (2D simulation), skipping wind forcing..."
+        return nothing
+    end
+
+    Lx, Ly = domain.Lx, domain.Ly
+
+    #default profiles if not specified
+    spatial_fn = wind.spatial_profile === nothing ?
+        (x, y) -> 1.0 : wind.spatial_profile
+
+    #3D case
+    @inline τy_flux(x, y, t, p) = p.τy * spatial_fn(x,y)
+
+    v_bcs = FieldBoundaryConditions(
+        top = FluxBoundaryCondition(τy_flux, parameters=(; τy=wind.τy))
+    )
+
+    return v_bcs
 end
 
 # Construct the grid
@@ -401,10 +601,28 @@ function HorizontalConvectionSimulation(;
     #initial conditions
     b_init = 0.0,
 
-    #forcing parameters
+    #buoyancy forcing parameters
     seasonal_amplitude = 0.0,
     seasonal_period = 365.0, 
     custom_seasonal = nothing, 
+
+    #coriolis parameters
+    coriolis = false, 
+    coriolis_scheme = :betaplane,
+    latitude_south = -90.0, 
+    latitude_north = 0.0, 
+    coriolis_reference_latitude = nothing, #used for fplane only
+
+    #wind forcing parameters
+    wind = false, 
+    wind_stress = 0.0, 
+    wind_spatial_profile = nothing, 
+
+    #southern westerlies shortcut
+    use_SO_westerlies = false, 
+    SO_westerlies_magnitude = 1e-4, 
+    SO_westerlies_center_lat = -50.0,
+    SO_westerlies_width = 10.0,
 
     #output parameters
     output_writer = true, 
@@ -426,7 +644,40 @@ function HorizontalConvectionSimulation(;
     #step 4. construct physics params using PhysicsParams
     physics = PhysicsParams(Ra=Ra, Pr=Pr, b★=b★, H=H, advection=advection)
 
-    #step 5. construct the buoyancy forcing with BuoyancyForcing
+    #step 5. construct coriolis 
+
+    coriolis_config = CoriolisConfig(
+        enabled = coriolis, 
+        scheme = coriolis_scheme, 
+        latitude_south = latitude_south, 
+        latitude_north = latitude_north, 
+        reference_latitude = coriolis_reference_latitude
+    )
+
+    coriolis_obj = make_coriolis(coriolis_config, domain)
+
+    #step 6. construct wind forcing
+
+    if use_SO_westerlies
+        wind_forcing = SouthernWesterlies(
+            domain = domain, 
+            τ_magnitude = SO_westerlies_magnitude, 
+            center_latitude = SO_westerlies_center_lat,
+            width_degrees = SO_westerlies_width
+        )
+
+    else 
+        #use manual wind configuration
+        wind_forcing = WindForcing(
+            enabled = wind, 
+            τy = wind_stress, 
+            spatial_profile = wind_spatial_profile
+        )
+    end
+
+    v_bcs = make_wind_stress(wind_forcing, domain)
+
+    #step 7. construct the buoyancy forcing with BuoyancyForcing
     forcing = BuoyancyForcing(
         b★=b★, 
         Lx = domain.Lx, 
@@ -440,7 +691,16 @@ function HorizontalConvectionSimulation(;
         top = ValueBoundaryCondition(surface_buoyancy, parameters=(; b★, Lx=domain.Lx))
     )
 
-    # step 6. construct the model 
+    #combined buoyancy and wind bcs
+
+    boundary_conditions_dic = Dict(:b => b_bcs)
+    if v_bcs !== nothing
+        boundary_conditions_dic[:v] = v_bcs
+    end
+
+    boundary_conditions = NamedTuple(boundary_conditions_dic)
+
+    # step 8. construct the model 
 
     pressure_solver = ConjugateGradientPoissonSolver(grid)
 
@@ -450,17 +710,18 @@ function HorizontalConvectionSimulation(;
         timestepper = :RungeKutta3, 
         tracers = :b, 
         buoyancy = BuoyancyTracer(), 
+        coriolis = coriolis_obj,
         closure = ScalarDiffusivity(; physics.ν, physics.κ), 
         hydrostatic_pressure_anomaly = CenterField(grid), 
         pressure_solver = pressure_solver, 
-        boundary_conditions = (; b=b_bcs)
+        boundary_conditions = boundary_conditions
     )
 
-    # step 7. set the initial conditions
+    # step 9. set the initial conditions
     B₀ = make_initial_buoyancy(b_init, domain.Ny)
     set!(model, b = B₀)
 
-    # step 8. construct the simulation timescale and simulation
+    # step 10. construct the simulation timescale and simulation
 
     τ_eq = sqrt(Ra)
     min_Δz = minimum_zspacing(grid)
@@ -470,7 +731,7 @@ function HorizontalConvectionSimulation(;
 
     simulation = Simulation(model, Δt = Δt, stop_time = τ_eq)
 
-    #step 9. add timestepper
+    #step 11. add timestepper
 
     wizard = TimeStepWizard(cfl = physics.cfl, diffusive_cfl = 0.2)
     simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(50))
@@ -482,7 +743,7 @@ function HorizontalConvectionSimulation(;
 
     simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
-    # step 10. setup the output writers
+    # step 12. setup the output writers
     filename_prefix = generate_filename(advection, numhill, h₀_frac, Ra, b_init)
     output_config = OutputConfig(
         enabled = output_writer, 
