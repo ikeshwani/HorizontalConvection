@@ -132,13 +132,42 @@ function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
             (1 + forcing.seasonal_amplitude * sin(2π * t / forcing.seasonal_period)) : # if there is no custom input this is the default
             (1 + forcing.seasonal_amplitude * forcing.custom_seasonal(t)) # return the custom if there is one
 
+    #old sine forcing
+    # if Ny == 1
+    #     #2D form of buoyancy forcing : dependent on x, t, p
+    #     @inline bˢ_flat(x, t, p) = p.b★ * sin(π * x / p.Lx) * seasonal_forcing(t)
+    #     return bˢ_flat
+    # else
+    #     #3D form of buoyancy forcing : dependent on x, y, t, p
+    #     @inline bˢ(x, y, t, p) = p.b★ * sin(π * x / p.Lx) * seasonal_forcing(t)
+    #     return bˢ
+    # end
+
+    # new tanh forcing
+
+    ϵ = 1e-6
+    β = atanh(1 - ϵ)
+    α = (2/Lx) * (β - atanh(-1 + ϵ))
+
     if Ny == 1
-        #2D form of buoyancy forcing : dependent on x, t, p
-        @inline bˢ_flat(x, t, p) = p.b★ * sin(π * x / p.Lx) * seasonal_forcing(t)
+        # 2D pieceside tanh with seasonal forcing
+        @inline bˢ_flat(x, t, p) = begin
+            if x < 0
+                return p.b★ * tanh(α * (x + Lx/3)) * seasonal_forcing(t)
+            else
+                return p.b★
+            end
+        end
         return bˢ_flat
     else
-        #3D form of buoyancy forcing : dependent on x, y, t, p
-        @inline bˢ(x, y, t, p) = p.b★ * sin(π * x / p.Lx) * seasonal_forcing(t)
+        #3D version
+        @inline bˢ(x, y, t, p) = begin
+            if x < 0 
+                return p.b★ * tanh(α * (x + Lx/3)) * seasonal_forcing(t)
+            else
+                return p.b★
+            end
+        end
         return bˢ
     end
 end
@@ -163,8 +192,8 @@ function CoriolisConfig(;
     reference_latitude = nothing
 )
 
-"""
-Constructs the coriolis force for the simulation,
+    """
+    Constructs the coriolis force for the simulation,
     enabled : whether or not to include coriolis force
     scheme : :fplane - constant f or :BetaPlane - traditional beta plane where f varies linearly with latitude_north
                 in my simulation x is the meridional direction so f varies with x in the beta plane approx
@@ -179,33 +208,33 @@ Constructs the coriolis force for the simulation,
         - we can use earth's rotation rate and radius
             Ω = 7.292115e-5 s⁻¹ 
             R = 6.371e6 m
-"""
-
-if scheme == :betaplane
-    #calculate f at domain center 
-    φ_center = (latitude_south + latitude_north) / 2
-    f₀ = 2 * Ω * sind(φ_center)
-
-    # now we need to calculate β = df/dx where x is the northward direction
-    """
-    okay so β = df/dφ * dφ/dx = > using chain rule
-    dx = R dφ because of arclength relationship
-    therfore, β = 2 Ω cos(φ) / R
     """
 
-    φ_rad = deg2rad(φ_center) # convert to radians
-    β = (2 * Ω * cos(φ_rad)) / R
-    ref_lat = φ_center 
+    if scheme == :betaplane
+        #calculate f at domain center 
+        φ_center = (latitude_south + latitude_north) / 2
+        f₀ = 2 * Ω * sind(φ_center)
 
-else #:fplane
-    ref_lat  = reference_latitude !== nothing ? reference_latitude :
-                (latitude_south + latitude_north) / 2
-    
-    f₀ = 2 * Ω * sind(ref_lat)
-    β = 0.0 
-end
+        # now we need to calculate β = df/dx where x is the northward direction
+        """
+        okay so β = df/dφ * dφ/dx = > using chain rule
+        dx = R dφ because of arclength relationship
+        therfore, β = 2 Ω cos(φ) / R
+        """
 
-return CoriolisConfig(enabled, scheme, f₀, β, latitude_south, latitude_north, ref_lat)
+        φ_rad = deg2rad(φ_center) # convert to radians
+        β = (2 * Ω * cos(φ_rad)) / R
+        ref_lat = φ_center 
+
+    else #:fplane
+        ref_lat  = reference_latitude !== nothing ? reference_latitude :
+                    (latitude_south + latitude_north) / 2
+        
+        f₀ = 2 * Ω * sind(ref_lat)
+        β = 0.0 
+    end
+
+    return CoriolisConfig(enabled, scheme, f₀, β, latitude_south, latitude_north, ref_lat)
 end
 
 function make_coriolis(coriolis_config::CoriolisConfig, domain::DomainConfig)
@@ -236,7 +265,7 @@ function make_coriolis(coriolis_config::CoriolisConfig, domain::DomainConfig)
         β = (f_north - f_south) / Lx
         f₀ = (f_south + f_north) / 2
 
-        return BetaPlane(f₀ = f₀, β = Β)
+        return BetaPlane(f₀ = f₀, β = β)
     end
 end
 
@@ -416,13 +445,10 @@ function make_initial_buoyancy(b_init, Ny::Int)
     """
 
     if Ny == 1
-        noise(x, z) = 1e-6 * (randn() - 0.5)
-        B₀(x, z) = b_init + noise(x, z)
+        return (x,z) -> b_init + 1.0e-6 * (randn() - 0.5)
     else
-        noise(x, y, z) = 1e-6 * (randn() - 0.5)
-        B₀(x, y, z) = b_init + noise(x, y, z)
+        return (x,y,z) -> b_init + 1.0e-6 * (randn() - 0.5)
     end
-    return B₀
 end
 
 # configuring the output writer setup
@@ -553,12 +579,23 @@ end
 
 # filename generator 
 
-function generate_filename(advection::Bool, numhill::Int, h₀_frac::Float64,
+function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, seasonal_amplitude::Float64, numhill::Int, h₀_frac::Float64,
                             Ra::Float64, b_init::Float64)
     """
     Generates filename prefix describing the simulation input
     """
     runtype = advection ? "turbulent" : "diffusive"
+
+    rotation = coriolis ? "_rotating" : nothing
+
+    external_wind = wind ? "_wind_forced" : nothing
+
+    if seasonal_amplitude!=0.0
+        b_time = "_temporalforcing"
+    else
+        b_time = nothing
+    end
+
 
     if b_init < 0.0
         starttype = "_coldstart"
@@ -576,7 +613,7 @@ function generate_filename(advection::Bool, numhill::Int, h₀_frac::Float64,
         hill_number = "_flat_"
     end
 
-    return string(runtype, hill_number, h₀_frac, "_Ra", Ra, starttype)
+    return string(runtype, rotation, external_wind, b_time, hill_number, h₀_frac, "_Ra", Ra, starttype)
 end
 
 ######## MAIN SIMULATION Function
@@ -626,11 +663,11 @@ function HorizontalConvectionSimulation(;
 
     #output parameters
     output_writer = true, 
-    output_dir = "/Users/hfdrake/code/HorizontalConvection/output/new_pressureSolver/",
+    output_dir = "/Users/hfdrake/code/HorizontalConvection/output/testing/",
 
     #computational parameters
     architecture = CPU()
-    )
+)
 
     # step 1. construct domain using DomainConfig
     domain = DomainConfig(H=H, α=α, Nx=Nx, Ny=Ny, Nz=Nz)
@@ -719,6 +756,7 @@ function HorizontalConvectionSimulation(;
 
     # step 9. set the initial conditions
     B₀ = make_initial_buoyancy(b_init, domain.Ny)
+    println("B₀ created: " , typeof(B₀))
     set!(model, b = B₀)
 
     # step 10. construct the simulation timescale and simulation
@@ -730,6 +768,7 @@ function HorizontalConvectionSimulation(;
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
     simulation = Simulation(model, Δt = Δt, stop_time = τ_eq)
+    #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
 
@@ -744,7 +783,7 @@ function HorizontalConvectionSimulation(;
     simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
     # step 12. setup the output writers
-    filename_prefix = generate_filename(advection, numhill, h₀_frac, Ra, b_init)
+    filename_prefix = generate_filename(advection, coriolis, wind, seasonal_amplitude, numhill, h₀_frac, Ra, b_init)
     output_config = OutputConfig(
         enabled = output_writer, 
         base_dir = output_dir, 
