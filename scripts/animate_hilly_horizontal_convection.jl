@@ -38,7 +38,7 @@ blim = 0.5
 χlim = 0.002
 
 H = 1.
-Lx = 4H
+Lx = 8H #this should be 8H not 4H ?
 
 axis_kwargs = (xlabel = L"x / H",
                ylabel = L"z / H",
