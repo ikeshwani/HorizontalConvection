@@ -129,7 +129,7 @@ function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
          #the condition is if custom_seasonal == nothing
     seasonal_forcing(t) = 
         forcing.custom_seasonal === nothing ? 
-            (1 + forcing.seasonal_amplitude * sin(2π * t / forcing.seasonal_period)) : # if there is no custom input this is the default
+            (forcing.seasonal_amplitude * (cos(2π * t / forcing.seasonal_period) + 1)/2) : # if there is no custom input this is the default
             (1 + forcing.seasonal_amplitude * forcing.custom_seasonal(t)) # return the custom if there is one
 
     #old sine forcing
@@ -145,29 +145,16 @@ function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
 
     # new tanh forcing
 
-    ϵ = 1e-6
-    β = atanh(1 - ϵ)
-    α = (2/Lx) * (β - atanh(-1 + ϵ))
+    # base structure of tanh forcing
+    bss(x) = (tanh(3 * (x + Lx/3)) - 1 ) / 2
 
     if Ny == 1
-        # 2D pieceside tanh with seasonal forcing
-        @inline bˢ_flat(x, t, p) = begin
-            if x < 0
-                return p.b★ * tanh(α * (x + Lx/3)) * seasonal_forcing(t)
-            else
-                return p.b★
-            end
-        end
+        # 2D tanh with seasonal forcing
+        @inline bˢ_flat(x, t, p) = p.b★ * (1 + bss(x) * (1 + seasonal_forcing(t)))
         return bˢ_flat
     else
-        #3D version
-        @inline bˢ(x, y, t, p) = begin
-            if x < 0 
-                return p.b★ * tanh(α * (x + Lx/3)) * seasonal_forcing(t)
-            else
-                return p.b★
-            end
-        end
+        #3D form of buoyancy forcing : dependent on x, y, t, p1
+        @inline bˢ(x, y, t, p) = p.b★ * (1 + bss(x) * (1 + seasonal_forcing(t)))
         return bˢ
     end
 end
