@@ -9,7 +9,7 @@ using TopographicHorizontalConvection: HorizontalConvectionSimulation
 simulation = HorizontalConvectionSimulation(;
    #domain parameters
     Nx = 256, 
-    Ny = 1,
+    Ny = 16,
     Nz = 32, 
     H = 1.0, 
     α = 8.0, 
@@ -25,12 +25,11 @@ simulation = HorizontalConvectionSimulation(;
     advection = true, 
 
     #initial conditions
-    b_init = -0.5,
+    b_init = -0.6,
 
     #buoyancy forcing parameters
-    seasonal_amplitude = 1.0,
-    seasonal_period = 30.0, 
-    custom_seasonal = nothing, 
+    seasonal_amplitude = 0.0,
+    seasonal_period = 30.0,
 
     #coriolis parameters
     coriolis = false, 
@@ -51,12 +50,13 @@ simulation = HorizontalConvectionSimulation(;
     SO_westerlies_width = 10.0,
 
     #output parameters
-    output_writer = true, 
-    output_dir = "/Users/hfdrake/code/HorizontalConvection/output/tanhforcing/",
+    output_writer = true,
+    output_dir = "../output/HCtest",
 
     #computational parameters
-    architecture = CPU()
+    architecture = GPU()
 )
+
 
 run!(simulation, pickup=false)
 

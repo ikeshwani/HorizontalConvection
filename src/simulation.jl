@@ -22,6 +22,8 @@ using Oceananigans.Solvers: ConjugateGradientPoissonSolver
 using Oceananigans.Grids: Center
 using Oceananigans.BuoyancyFormulations: Zᶜᶜᶜ
 using Oceanostics
+using CUDA
+using Adapt
 
 # helper functions for potential energy
 
@@ -54,20 +56,71 @@ end
 
 function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 1, Nz = 32)
     Lx = α * H
-    Ly = H/4
+    Ly = H/2
     return DomainConfig(H, Lx, Ly, Nx, Ny, Nz)
 end
 
+
 # construct the seafloor
+
+"""
+we are using separate 2D and 3D structs for the seafloor so that it works for GPUs
+    first is 2D case Ny==1
+"""
+
+struct Seafloor2D
+    H::Float64
+    Lx::Float64
+    h₀_1::Float64
+    h₀_2::Float64
+    hill_length::Float64
+end
+
+@inline function (s::Seafloor2D)(x,z)
+    hill_1 = (2/3) * s.h₀_1 *
+        exp(-(x - 0.0 * s.Lx / 2)^2 / (2 * s.hill_length^2))
+
+    hill_2 = s.h₀_2 *
+        exp(-(x - 0.5 * s.Lx / 2)^2 / (2 * s.hill_length^2))
+
+    return -s.H + (hill_1 + hill_2)
+end
+
+struct Seafloor3D
+    H::Float64
+    Lx::Float64
+    Ly::Float64
+    h₀_1::Float64
+    h₀_2::Float64
+    hill_length::Float64
+    channel_width::Float64
+end
+
+### now we repeat for the 3D seafloor
+
+@inline function (s::Seafloor3D)(x, y, z)
+    hill_1 = (2/3) * s.h₀_1 *
+        exp(-(x - 0.0 * s.Lx / 2)^2 / (2 * s.hill_length^2))
+
+    hill_2 = s.h₀_2 *
+        exp(-(x - 0.5 * s.Lx / 2)^2 / (2 * s.hill_length^2))
+
+    channel = 1 - (1/3) * exp(-(y^2) / (2 * s.channel_width^2))
+
+    return -s.H + (hill_1 + hill_2) * channel
+end
 
 function make_seafloor(domain::DomainConfig, h₀_frac, numhill)
     """
     make_seafloor :
-    uses the domain struct : DomainConfig which contains H, Lx, Ly
+    uses the respective 2D or 3D seafloor structs which contains H, Lx, Ly, h₀_1, h₀_2, hill_length, Channel_length
     h₀_frac : fraction of domain height for hill amplitude
     numhill : Number of hills (0,1, or 2)
 
     returns seafloor function to input into ImmersedBoundaryGrid
+
+    this is isbits, immutable, GPU-sage
+     does not use closures, has no captured variables
     """
     
     H, Lx, Ly = domain.H, domain.Lx, domain.Ly
@@ -85,77 +138,96 @@ function make_seafloor(domain::DomainConfig, h₀_frac, numhill)
     end
 
     hill_length = Lx/32
-
-    #define individual hills
-    hill_1(x) = (2/3) * h₀_1 * exp(-(x - 0.0Lx/2)^2 / (2*hill_length^2))
-    hill_2(x) = h₀_2 * exp(-(x-0.5Lx/2)^2 / (2*hill_length^2))
+    channel_width = Ly/8
 
     if domain.Ny == 1
-        # 2D case !
-        seafloor_flaty(x) = -H + (hill_1(x) + hill_2(x))
-        return seafloor_flaty
+        return Seafloor2D(
+            H, 
+            Lx, 
+            h₀_1, 
+            h₀_2, 
+            hill_length
+        )
     else
-        # 3D case : add meridional channel
-        channel_width = Ly/8
-        channel(y) = 1 - (1/3) * exp(-(y^2) / (2 * channel_width^2))
-        seafloor(x,y) = -H + (hill_1(x) + hill_2(x)) * channel(y)
-        return seafloor
+        return Seafloor3D(
+            H, 
+            Lx, 
+            Ly, 
+            h₀_1, 
+            h₀_2, 
+            hill_length, 
+            channel_width
+        )
     end
 end
 
 # surface buoyancy forcing struct and constructor 
+
+# seasonal forcing struct
 
 struct BuoyancyForcing
     b★::Float64
     Lx::Float64
     seasonal_amplitude::Float64
     seasonal_period::Float64
-    custom_seasonal::Union{Function, Nothing}
 end
 
-function BuoyancyForcing(; b★=1.0, Lx=8.0, seasonal_amplitude = 0.0, seasonal_period = 365.0, custom_seasonal = nothing)
-    return BuoyancyForcing(b★, Lx, seasonal_amplitude, seasonal_period, custom_seasonal)
+struct SeasonalForcing
+    seasonal_amplitude::Float64
+    seasonal_period::Float64
+end
+
+@inline function (s::SeasonalForcing)(t)
+    return s.seasonal_amplitude * (cos(2π * t / s.seasonal_period) + 1) / 2
+end
+
+struct SurfaceBuoyancy2D
+    b★::Float64
+    Lx::Float64
+    seasonal::SeasonalForcing
+end
+
+@inline function (b::SurfaceBuoyancy2D)(x, t, p)
+    bss = (tanh(3 * (x + b.Lx / 3)) - 1) / 2
+    return b.b★ * (1 + bss * (1 + b.seasonal(t)))
+end
+
+struct SurfaceBuoyancy3D
+    b★::Float64
+    Lx::Float64
+    seasonal::SeasonalForcing
+end
+
+@inline function (b::SurfaceBuoyancy3D)(x, y, t, p)
+    bss = (tanh(3 * (x + b.Lx / 3)) - 1) / 2
+    return b.b★ * (1 + bss * (1 + b.seasonal(t)))
 end
 
 function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
     """
     make_surface_buoyancy() : creates surface buoyancy boundary condition function for 2D or 3D sim
     uses BuoyancyForcing struct which contains relevant variables
+
+    this is GPU SAFE
     """
-    
-    b★ , Lx = forcing.b★, forcing.Lx
 
-    #use a ternary operator to choose between default seasonal buoyancy forcing or custom buoyancy forcing. 
-         #the condition is if custom_seasonal == nothing
-    seasonal_forcing(t) = 
-        forcing.custom_seasonal === nothing ? 
-            (forcing.seasonal_amplitude * (cos(2π * t / forcing.seasonal_period) + 1)/2) : # if there is no custom input this is the default
-            (1 + forcing.seasonal_amplitude * forcing.custom_seasonal(t)) # return the custom if there is one
+    seasonal = SeasonalForcing(
+        forcing.seasonal_amplitude, 
+        forcing.seasonal_period
+    )
 
-    #old sine forcing
-    # if Ny == 1
-    #     #2D form of buoyancy forcing : dependent on x, t, p
-    #     @inline bˢ_flat(x, t, p) = p.b★ * sin(π * x / p.Lx) * seasonal_forcing(t)
-    #     return bˢ_flat
-    # else
-    #     #3D form of buoyancy forcing : dependent on x, y, t, p
-    #     @inline bˢ(x, y, t, p) = p.b★ * sin(π * x / p.Lx) * seasonal_forcing(t)
-    #     return bˢ
-    # end
-
-    # new tanh forcing
-
-    # base structure of tanh forcing
-    bss(x) = (tanh(3 * (x + Lx/3)) - 1 ) / 2
-
-    if Ny == 1
-        # 2D tanh with seasonal forcing
-        @inline bˢ_flat(x, t, p) = p.b★ * (1 + bss(x) * (1 + seasonal_forcing(t)))
-        return bˢ_flat
+    if Ny == 1 
+        return SurfaceBuoyancy2D(
+            forcing.b★,
+            forcing.Lx, 
+            seasonal
+        )
     else
-        #3D form of buoyancy forcing : dependent on x, y, t, p1
-        @inline bˢ(x, y, t, p) = p.b★ * (1 + bss(x) * (1 + seasonal_forcing(t)))
-        return bˢ
+        return SurfaceBuoyancy3D(
+            forcing.b★,
+            forcing.Lx, 
+            seasonal
+        )
     end
 end
 
@@ -360,24 +432,53 @@ end
 function make_grid(domain::DomainConfig, seafloor_function, architecture)
     """
     Constructs the conputational grid with immersed boundary
+    GPU-compatible !!!!!!!! (hopefully)
+    I learned from the testing that I have to pre-compute the seafloor on CPU
+    then transfer to GPU
     """
     H, Lx, Ly = domain.H, domain.Lx, domain.Ly
     Nx, Ny, Nz = domain.Nx, domain.Ny, domain.Nz
 
     if Ny  == 1
         #2D Grid with y dimension flat
+
+        cpu_grid = RectilinearGrid(
+            CPU(), 
+            size = (Nx, Nz), 
+            x = (-Lx/2, Lx/2), 
+            z = (-H, 0),
+            halo = (4, 4), 
+            topology = (Bounded, Flat, Bounded)
+        )
+
+        #precompute seafloor heights on CPU
+        seafloor_heights = zeros(Nx)
+        for i in 1:Nx
+            x = cpu_grid.xᶜᵃᵃ[i]
+            seafloor_heights[i] = seafloor_function(x, 0.0)
+        end
+
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Nz), 
             x = (-Lx/2, Lx/2), 
             z = (-H, 0), 
-            halo = (4, 4),
+            halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
+
+        #use the seafloor heights from the CPU grid but convert 
+        if architecture isa GPU
+            seafloor_heights = CuArray(seafloor_heights)
+        end
+       
     else
         #3D Grid with y dimension Periodic
-        underlying_grid = RectilinearGrid(
-            architecture, 
+
+        #Create the CPU grid for computing coords
+
+        cpu_grid = RectilinearGrid(
+            CPU(), 
             size = (Nx, Ny, Nz), 
             x = (-Lx/2, Lx/2), 
             y = (-Ly/2, Ly/2), 
@@ -385,9 +486,31 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
+
+        seafloor_heights = zeros(Nx, Ny)
+        for i in 1:Nx , j in 1:Ny
+            x = cpu_grid.xᶜᵃᵃ[i]
+            y = cpu_grid.yᵃᶜᵃ[j]
+            seafloor_heights[i, j] = seafloor_function(x, y, 0.0)
+        end
+
+        #create the actual underlying grid
+        underlying_grid = RectilinearGrid(
+            architecture, 
+            size = (Nx, Ny, Nz),
+            x = (-Lx/2, Lx/2), 
+            y = (-Ly/2, Ly/2), 
+            z = (-H, 0), 
+            halo = (4, 4, 4), 
+            topology = (Bounded, Periodic, Bounded)
+        )
+
+        if architecture isa GPU
+            seafloor_heights = CuArray(seafloor_heights)
+        end
     end
 
-    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(seafloor_function))
+    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(seafloor_heights))
 end
 
 # Constructor for the physics parameters
@@ -431,10 +554,14 @@ function make_initial_buoyancy(b_init, Ny::Int)
         the input b_init governs the coldstart 
     """
 
+    @inline function noise(x,z)
+        return 1e-6 * sin(2π * x) * sin(2π * z)
+    end
+
     if Ny == 1
-        return (x,z) -> b_init + 1.0e-6 * (randn() - 0.5)
+        return (x,z) -> b_init + noise(x,z)
     else
-        return (x,y,z) -> b_init + 1.0e-6 * (randn() - 0.5)
+        return (x,y,z) -> b_init + noise(x,z)
     end
 end
 
@@ -620,7 +747,7 @@ function HorizontalConvectionSimulation(;
     Ra = 1e11, 
     Pr = 1.0, 
     b★ = 1.0, 
-    advection = true, 
+    advection = true,
 
     #initial conditions
     b_init = 0.0,
@@ -650,7 +777,7 @@ function HorizontalConvectionSimulation(;
 
     #output parameters
     output_writer = true, 
-    output_dir = "/Users/hfdrake/code/HorizontalConvection/output/testing/",
+    output_dir = "../output/testing/",
 
     #computational parameters
     architecture = CPU()
@@ -703,16 +830,16 @@ function HorizontalConvectionSimulation(;
 
     #step 7. construct the buoyancy forcing with BuoyancyForcing
     forcing = BuoyancyForcing(
-        b★=b★, 
-        Lx = domain.Lx, 
-        seasonal_amplitude = seasonal_amplitude, 
-        seasonal_period = seasonal_period, 
-        custom_seasonal = custom_seasonal
+        b★, 
+        domain.Lx, 
+        seasonal_amplitude, 
+        seasonal_period
     )
 
     surface_buoyancy = make_surface_buoyancy(forcing, domain.Ny)
+    
     b_bcs = FieldBoundaryConditions(
-        top = ValueBoundaryCondition(surface_buoyancy, parameters=(; b★, Lx=domain.Lx))
+        top = ValueBoundaryCondition(surface_buoyancy)
     )
 
     #combined buoyancy and wind bcs
