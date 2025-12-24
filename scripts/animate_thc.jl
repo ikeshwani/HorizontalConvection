@@ -6,31 +6,34 @@ using Oceananigans
 using Oceananigans.Fields
 using Oceananigans.AbstractOperations: volume
 
-saved_output_filename = NCDataset(string("/Users/hfdrake/code/HorizontalConvection/output/tanhforcing/256_32/buoyancy.nc"));
+saved_output_filename = NCDataset(string("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/HCtest/256_32/buoyancy.nc"));
 
-b_timeseries = saved_output_filename["b"][:,:,:] #2d 
+b_timeseries = saved_output_filename["b"][:,:,:,:] #2d 
 time = saved_output_filename["time"]
 
 t_final = time[end]
 
 x = saved_output_filename["x_caa"][:]
-#y = saved_output_filename["yC"][:] # no y-dimension for 2d
+y = saved_output_filename["y_aca"][:]
 z = saved_output_filename["z_aac"][:]
+
+Ra = saved_output_filename.attrib["Ra"]
 
 @info "Making an animation from saved data..."
 
 n = Observable(1)
+H = saved_output_filename.attrib["H"]
+Lx = saved_output_filename.attrib["Lx"]
+Ly = saved_output_filename.attrib["Ly"]
+Ny = saved_output_filename.attrib["Ny"]
 
 title = @lift @sprintf("buoyancy [m/s²] at t = %.2f", time[$n])
 
-bₙ = @lift b_timeseries[:, :, $n]
-
-H = saved_output_filename.attrib["H"]
-Lx = saved_output_filename.attrib["Lx"]
+bₙ = @lift b_timeseries[:, Int(Ny/2), :, $n]
 
 axis_kwargs = (xlabel = L"x / H",
                ylabel = L"z / H",
-               limits = ((-4, 4), (-1, 0)),
+               limits = ((-Lx/2, Lx/2), (-H, 0)),
                aspect = Lx / H,
                titlesize = 20)
 
@@ -45,6 +48,6 @@ Colorbar(fig[1, 2], hm_B)
 
 frames = 1:length(time)
 
-record(fig, "/Users/hfdrake/code/HorizontalConvection/animations/tanhforcingshortperiod.mp4", frames, framerate=8) do i
+record(fig, "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/test.mp4", frames, framerate=8) do i
     n[] = i
 end
