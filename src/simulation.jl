@@ -182,7 +182,7 @@ struct SeasonalForcing
 end
 
 @inline function (s::SeasonalForcing)(t)
-    return s.seasonal_amplitude * (cos(2π * t / s.seasonal_period) + 1) / 2
+    return (s.seasonal_amplitude * (cos(2π * t / s.seasonal_period) + 1) / 2)
 end
 
 Adapt.@adapt_structure SeasonalForcing
@@ -193,9 +193,9 @@ struct SurfaceBuoyancy2D
     seasonal::SeasonalForcing
 end
 
-@inline function (b::SurfaceBuoyancy2D)(x, t, p)
-    bss = (tanh(3 * (x + b.Lx / 3)) - 1) / 2
-    return b.b★ * (1 + bss * (1 + b.seasonal(t)))
+@inline function (b::SurfaceBuoyancy2D)(x, t)
+    bss(x) = (tanh(3 * (x + b.Lx/3)) - 1) / 2
+    return b.b★ * (1 + bss(x) * (1 + b.seasonal(t)))
 end
 
 Adapt.@adapt_structure SurfaceBuoyancy2D
@@ -206,9 +206,9 @@ struct SurfaceBuoyancy3D
     seasonal::SeasonalForcing
 end
 
-@inline function (b::SurfaceBuoyancy3D)(x, y, t, p)
-    bss = (tanh(3 * (x + b.Lx / 3)) - 1) / 2
-    return b.b★ * (1 + bss * (1 + b.seasonal(t)))
+@inline function (b::SurfaceBuoyancy3D)(x, y, t)
+    bss(x) = (tanh(3 * (x + b.Lx/3)) - 1) / 2
+    return b.b★ * (1 + bss(x) * (1 + b.seasonal(t)))
 end
 
 Adapt.@adapt_structure SurfaceBuoyancy3D
@@ -848,24 +848,17 @@ function HorizontalConvectionSimulation(;
 
     surface_buoyancy = make_surface_buoyancy(forcing, domain.Ny)
 
-    @inline function buoyancy_flux(x, y, t, p)
-        bss = (tanh(3 * (x + p.Lx / 3)) - 1) / 2
-        seasonal = p.seasonal_amplitude == 0 ? 0.0 :
-            p.seasonal_amplitude * cos((2π * t / p.seasonal_period) + 1) / 2
-    return p.b★ * bss * (1 + seasonal)
-    end
+    # @inline function buoyancy_flux(x, y, t, p)
+    #     bss(x) = (tanh(3 * (x + p.Lx / 3)) - 1) / 2
+    #     seasonal = p.seasonal_amplitude == 0 ? 0.0 :
+    #         p.seasonal_amplitude * cos((2π * t / p.seasonal_period) + 1) / 2
+    # return p.b★ * bss(x) * (1 + seasonal)
+    # end
 
     b_bcs = FieldBoundaryConditions(
-        top = FluxBoundaryCondition(
-            buoyancy_flux, 
-            parameters = (
-                b★ = b★, 
-                Lx = domain.Lx, 
-                seasonal_amplitude = seasonal_amplitude, 
-                seasonal_period = seasonal_period
-            )
+        top = ValueBoundaryCondition(
+            surface_buoyancy)
         )
-    )
 
     #combined buoyancy and wind bcs
 
