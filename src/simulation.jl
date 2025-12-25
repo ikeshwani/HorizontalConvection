@@ -176,26 +176,18 @@ function BuoyancyForcing(; b★, Lx, seasonal_amplitude, seasonal_period)
     return BuoyancyForcing(b★, Lx, seasonal_amplitude, seasonal_period)
 end
 
-struct SeasonalForcing
+struct SurfaceBuoyancy2D
+    b★::Float64
+    Lx::Float64
     seasonal_amplitude::Float64
     seasonal_period::Float64
 end
 
-@inline function (s::SeasonalForcing)(t)
-    return (s.seasonal_amplitude * (cos(2π * t / s.seasonal_period) + 1) / 2)
-end
-
-Adapt.@adapt_structure SeasonalForcing
-
-struct SurfaceBuoyancy2D
-    b★::Float64
-    Lx::Float64
-    seasonal::SeasonalForcing
-end
-
 @inline function (b::SurfaceBuoyancy2D)(x, t)
-    bss(x) = (tanh(3 * (x + b.Lx/3)) - 1) / 2
-    return b.b★ * (1 + bss(x) * (1 + b.seasonal(t)))
+    @inline bss(x) = (tanh(3 * (x + b.Lx/3)) - 1) / 2
+    @inline seasonal(t) = b.seasonal_amplitude == 0.0 ? 0.0 :
+        b.seasonal_amplitude * (cos(2π * t / b.seasonal_period) + 1) / 2
+    return b.b★ * (1 + bss(x) * (1 + seasonal(t)))
 end
 
 Adapt.@adapt_structure SurfaceBuoyancy2D
@@ -203,12 +195,15 @@ Adapt.@adapt_structure SurfaceBuoyancy2D
 struct SurfaceBuoyancy3D
     b★::Float64
     Lx::Float64
-    seasonal::SeasonalForcing
+    seasonal_amplitude::Float64
+    seasonal_period::Float64
 end
 
 @inline function (b::SurfaceBuoyancy3D)(x, y, t)
-    bss(x) = (tanh(3 * (x + b.Lx/3)) - 1) / 2
-    return b.b★ * (1 + bss(x) * (1 + b.seasonal(t)))
+    @inline bss(x) = (tanh(3 * (x + b.Lx/3)) - 1) / 2
+    @inline seasonal(t) = b.seasonal_amplitude == 0.0 ? 0.0 :
+        b.seasonal_amplitude * (cos(2π * t / b.seasonal_period) + 1) / 2
+    return b.b★ * (1 + bss(x) * (1 + seasonal(t)))
 end
 
 Adapt.@adapt_structure SurfaceBuoyancy3D
@@ -221,22 +216,19 @@ function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
     this is GPU SAFE
     """
 
-    seasonal = SeasonalForcing(
-        forcing.seasonal_amplitude, 
-        forcing.seasonal_period
-    )
-
     if Ny == 1 
         return SurfaceBuoyancy2D(
             forcing.b★,
             forcing.Lx, 
-            seasonal
+            forcing.seasonal_amplitude,
+            forcing.seasonal_period
         )
     else
         return SurfaceBuoyancy3D(
             forcing.b★,
             forcing.Lx, 
-            seasonal
+            forcing.seasonal_amplitude,
+            forcing.seasonal_period
         )
     end
 end
@@ -847,13 +839,6 @@ function HorizontalConvectionSimulation(;
     )
 
     surface_buoyancy = make_surface_buoyancy(forcing, domain.Ny)
-
-    # @inline function buoyancy_flux(x, y, t, p)
-    #     bss(x) = (tanh(3 * (x + p.Lx / 3)) - 1) / 2
-    #     seasonal = p.seasonal_amplitude == 0 ? 0.0 :
-    #         p.seasonal_amplitude * cos((2π * t / p.seasonal_period) + 1) / 2
-    # return p.b★ * bss(x) * (1 + seasonal)
-    # end
 
     b_bcs = FieldBoundaryConditions(
         top = ValueBoundaryCondition(
