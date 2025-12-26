@@ -6,9 +6,9 @@ using Oceananigans
 using Oceananigans.Fields
 using Oceananigans.AbstractOperations: volume
 
-saved_output_filename = NCDataset(string("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/HCtest/256_32/buoyancy.nc"));
+saved_output_filename = NCDataset(string("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/CPU_test/bss_coldstart/256_32/buoyancy.nc"));
 
-b_timeseries = saved_output_filename["b"][:,:,:,:] #2d 
+b_timeseries = saved_output_filename["b"][:,:,:,:] #3d 
 time = saved_output_filename["time"]
 
 t_final = time[end]
@@ -41,13 +41,13 @@ fig = Figure(size=(800, 600))
 
 ax_B = Axis(fig[1, 1]; title = title, axis_kwargs...)
 
-B_lims = (-maximum(b_timeseries), maximum(b_timeseries))
+B_lims = (-1.0, 1.0)
 
 hm_B = heatmap!(ax_B, x, z, bₙ; colorrange = B_lims, colormap = :balance)
 Colorbar(fig[1, 2], hm_B)
 
 frames = 1:length(time)
 
-record(fig, "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/test.mp4", frames, framerate=8) do i
+record(fig, "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/CPU/coldstart_bss.mp4", frames, framerate=8) do i
     n[] = i
 end

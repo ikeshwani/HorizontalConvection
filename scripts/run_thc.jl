@@ -19,13 +19,13 @@ simulation = HorizontalConvectionSimulation(;
     numhill = 1, 
 
     #physics parameters
-    Ra = 1e5, 
+    Ra = 1e8, 
     Pr = 1.0, 
     b★ = 1.0, 
     advection = true, 
 
     #initial conditions
-    b_init = -0.6,
+    b_init = -0.5,
 
     #buoyancy forcing parameters
     seasonal_amplitude = 0.0,
@@ -51,7 +51,7 @@ simulation = HorizontalConvectionSimulation(;
 
     #output parameters
     output_writer = true,
-    output_dir = "../output/HCtest",
+    output_dir = "../output/GPU_test/base_turb",
 
     #computational parameters
     architecture = GPU()

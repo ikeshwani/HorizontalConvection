@@ -176,17 +176,30 @@ function BuoyancyForcing(; b★, Lx, seasonal_amplitude, seasonal_period)
 end
 
 @inline function surface_buoyancy_2d(x, t, p)
-    bss = (tanh(3 * (x + p.Lx/3)) - 1) / 2
-    seasonal = p.seasonal_amplitude == 0.0 ? 0.0 : 
-        p.seasonal_amplitude * (cos(2π * t / p.seasonal_period) + 1) / 2
-    return p.b★ * (1 + bss * (1 + seasonal))
+    #base spatial profile goes from -1 to 1
+    bss = (tanh(3 * (x + p.Lx/3)))
+    
+    #for summer (cos=1) : i want to go from (0, 1) so (bss+1)/2
+    # for winter (cos=-1) : i want to go from (-2,1) so bss-1
+    #for base (cos=0) : i want (-1,1) so bss
+    if p.seasonal_amplitude == 0.0
+        return p.b★ * bss
+    else
+        seasonal = 0.5 * (1 + p.seasonal_amplitude * cos(2π * t / p.seasonal_period))
+        return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
+    end
 end
 
+
 @inline function surface_buoyancy_3d(x, y, t, p)
-    bss = (tanh(3 * (x + p.Lx/3)) - 1) / 2
-    seasonal = p.seasonal_amplitude == 0.0 ? 0.0 : 
-        p.seasonal_amplitude * (cos(2π * t / p.seasonal_period) + 1) / 2
-    return p.b★ * (1 + bss * (1 + seasonal))
+    bss = (tanh(3 * (x + p.Lx/3)))
+    
+    if p.seasonal_amplitude == 0.0
+        return p.b★ * bss
+    else
+        seasonal = 0.5 * (1 + p.seasonal_amplitude * cos(2π * t / p.seasonal_period))
+        return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
+    end
 end
 
 function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
