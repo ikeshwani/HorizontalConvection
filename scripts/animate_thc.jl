@@ -6,7 +6,7 @@ using Oceananigans
 using Oceananigans.Fields
 using Oceananigans.AbstractOperations: volume
 
-saved_output_filename = NCDataset(string("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/CPU_test/bss_coldstart/256_32/buoyancy.nc"));
+saved_output_filename = NCDataset(string("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_short_test/256_32/buoyancy.nc"));
 
 b_timeseries = saved_output_filename["b"][:,:,:,:] #3d 
 time = saved_output_filename["time"]
@@ -27,7 +27,7 @@ Lx = saved_output_filename.attrib["Lx"]
 Ly = saved_output_filename.attrib["Ly"]
 Ny = saved_output_filename.attrib["Ny"]
 
-title = @lift @sprintf("buoyancy [m/s²] at t = %.2f", time[$n])
+title = @lift @sprintf("buoyancy [m/s²] of experiment with Ra = %.2e at t = %.2f", Ra, time[$n])
 
 bₙ = @lift b_timeseries[:, Int(Ny/2), :, $n]
 
@@ -48,6 +48,6 @@ Colorbar(fig[1, 2], hm_B)
 
 frames = 1:length(time)
 
-record(fig, "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/CPU/coldstart_bss.mp4", frames, framerate=8) do i
+record(fig, "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/bss_cs_turb_short.mp4", frames, framerate=8) do i
     n[] = i
 end

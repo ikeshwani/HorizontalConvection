@@ -51,7 +51,7 @@ simulation = HorizontalConvectionSimulation(;
 
     #output parameters
     output_writer = true,
-    output_dir = "../output/GPU_test/base_turb",
+    output_dir = "../output/GPU_test/bss_short_test",
 
     #computational parameters
     architecture = GPU()

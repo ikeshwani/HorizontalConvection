@@ -192,14 +192,18 @@ end
 
 
 @inline function surface_buoyancy_3d(x, y, t, p)
-    bss = (tanh(3 * (x + p.Lx/3)))
+
+    #try the simplest possible test by removing the conditional
+
+    return p.b★ * (tanh(3 * (x + p.Lx/3)))
+    # bss = (tanh(3 * (x + p.Lx/3)))
     
-    if p.seasonal_amplitude == 0.0
-        return p.b★ * bss
-    else
-        seasonal = 0.5 * (1 + p.seasonal_amplitude * cos(2π * t / p.seasonal_period))
-        return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
-    end
+    # if p.seasonal_amplitude == 0.0
+    #     return p.b★ * bss
+    # else
+    #     seasonal = 0.5 * (1 + p.seasonal_amplitude * cos(2π * t / p.seasonal_period))
+    #     return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
+    # end
 end
 
 function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
@@ -216,63 +220,6 @@ function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
         return surface_buoyancy_3d
     end
 end
-
-# struct SurfaceBuoyancy2D
-#     b★::Float64
-#     Lx::Float64
-#     seasonal_amplitude::Float64
-#     seasonal_period::Float64
-# end
-
-# @inline function (b::SurfaceBuoyancy2D)(x, t)
-#     @inline bss(x) = (tanh(3 * (x + b.Lx/3)) - 1) / 2
-#     @inline seasonal(t) = b.seasonal_amplitude == 0.0 ? 0.0 :
-#         b.seasonal_amplitude * (cos(2π * t / b.seasonal_period) + 1) / 2
-#     return b.b★ * (1 + bss(x) * (1 + seasonal(t)))
-# end
-
-# Adapt.@adapt_structure SurfaceBuoyancy2D
-
-# struct SurfaceBuoyancy3D
-#     b★::Float64
-#     Lx::Float64
-#     seasonal_amplitude::Float64
-#     seasonal_period::Float64
-# end
-
-# @inline function (b::SurfaceBuoyancy3D)(x, y, t)
-#     @inline bss(x) = (tanh(3 * (x + b.Lx/3)) - 1) / 2
-#     @inline seasonal(t) = b.seasonal_amplitude == 0.0 ? 0.0 :
-#         b.seasonal_amplitude * (cos(2π * t / b.seasonal_period) + 1) / 2
-#     return b.b★ * (1 + bss(x) * (1 + seasonal(t)))
-# end
-
-# Adapt.@adapt_structure SurfaceBuoyancy3D
-
-# function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
-#     """
-#     make_surface_buoyancy() : creates surface buoyancy boundary condition function for 2D or 3D sim
-#     uses BuoyancyForcing struct which contains relevant variables
-
-#     this is GPU SAFE
-#     """
-
-#     if Ny == 1 
-#         return SurfaceBuoyancy2D(
-#             forcing.b★,
-#             forcing.Lx, 
-#             forcing.seasonal_amplitude,
-#             forcing.seasonal_period
-#         )
-#     else
-#         return SurfaceBuoyancy3D(
-#             forcing.b★,
-#             forcing.Lx, 
-#             forcing.seasonal_amplitude,
-#             forcing.seasonal_period
-#         )
-#     end
-# end
 
 # construct the beta-plane configuration of the coriolis parameters
 
@@ -932,7 +879,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = τ_eq)
+    simulation = Simulation(model, Δt = Δt, stop_time = 100.0)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
