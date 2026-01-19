@@ -6,7 +6,7 @@ using Oceananigans
 using Oceananigans.Fields
 using Oceananigans.AbstractOperations: volume
 
-saved_output_filename = NCDataset(string("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_short_test/256_32/buoyancy.nc"));
+saved_output_filename = NCDataset(string("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/buoyancy.nc"));
 
 b_timeseries = saved_output_filename["b"][:,:,:,:] #3d 
 time = saved_output_filename["time"]
@@ -48,6 +48,6 @@ Colorbar(fig[1, 2], hm_B)
 
 frames = 1:length(time)
 
-record(fig, "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/bss_cs_turb_short.mp4", frames, framerate=8) do i
+record(fig, "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/bss_Ra1e8_512_64.mp4", frames, framerate=8) do i
     n[] = i
 end

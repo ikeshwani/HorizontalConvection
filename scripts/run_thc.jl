@@ -8,9 +8,9 @@ using TopographicHorizontalConvection: HorizontalConvectionSimulation
 
 simulation = HorizontalConvectionSimulation(;
    #domain parameters
-    Nx = 256, 
-    Ny = 16,
-    Nz = 32, 
+    Nx = 1024, 
+    Ny = 64,
+    Nz = 128, 
     H = 1.0, 
     α = 8.0, 
 
@@ -19,7 +19,7 @@ simulation = HorizontalConvectionSimulation(;
     numhill = 1, 
 
     #physics parameters
-    Ra = 1e8, 
+    Ra = 1e8,
     Pr = 1.0, 
     b★ = 1.0, 
     advection = true, 
@@ -51,7 +51,7 @@ simulation = HorizontalConvectionSimulation(;
 
     #output parameters
     output_writer = true,
-    output_dir = "../output/GPU_test/bss_short_test",
+    output_dir = "../output/GPU_test/bss_Ra1e8",
 
     #computational parameters
     architecture = GPU()

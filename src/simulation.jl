@@ -167,7 +167,7 @@ end
 struct BuoyancyForcing
     b★::Float64
     Lx::Float64
-    seasonal_amplitude::Float64
+    seasonal_amplitude::Float64 
     seasonal_period::Float64
 end
 
@@ -178,32 +178,46 @@ end
 @inline function surface_buoyancy_2d(x, t, p)
     #base spatial profile goes from -1 to 1
     bss = (tanh(3 * (x + p.Lx/3)))
-    
-    #for summer (cos=1) : i want to go from (0, 1) so (bss+1)/2
+
+        #for summer (cos=1) : i want to go from (0, 1) so (bss+1)/2
     # for winter (cos=-1) : i want to go from (-2,1) so bss-1
     #for base (cos=0) : i want (-1,1) so bss
+    if p.seasonal_amplitude == 0.0
+        return p.b★ * bss
+    else
+        seasonal = 0.5 * p.seasonal_amplitude * (1 + cos(2π * t / p.seasonal_period))
+        return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
+    end
+end
+
+    # #we're going to split the bss profile into negative and postive sides or north/south sides because otherwise the result is symmetric forcings
+    # b_neg = min(bss, 0.0) # south : dense waters
+    # b_pos = max(bss, 0.0) # north : buoyant waters
+
+    # #when S=1 : winter , S=-1 : summer
+    # S = cos(2π * t / p.seasonal_period) 
+    
+    # #southern amplification (winter cooling, summer shutdown)
+    # south_factor = 1 + p.winter_amplitude * max(S, 0.0)
+    # south_factor *= max(1 - p.summer_amplitude * max(-S, 0.0), 0.0)
+
+    # #northern summer warming only
+    # north_offset = p.summer_amplitude * max(-S, 0.0)
+
+    # return p.b★ * (south_factor * b_neg + b_pos + north_offset)
+    
+
+
+
+@inline function surface_buoyancy_3d(x, y, t, p)
+    bss = (tanh(3 * (x + p.Lx/3)))
+    
     if p.seasonal_amplitude == 0.0
         return p.b★ * bss
     else
         seasonal = 0.5 * (1 + p.seasonal_amplitude * cos(2π * t / p.seasonal_period))
         return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
     end
-end
-
-
-@inline function surface_buoyancy_3d(x, y, t, p)
-
-    #try the simplest possible test by removing the conditional
-
-    return p.b★ * (tanh(3 * (x + p.Lx/3)))
-    # bss = (tanh(3 * (x + p.Lx/3)))
-    
-    # if p.seasonal_amplitude == 0.0
-    #     return p.b★ * bss
-    # else
-    #     seasonal = 0.5 * (1 + p.seasonal_amplitude * cos(2π * t / p.seasonal_period))
-    #     return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
-    # end
 end
 
 function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
@@ -563,7 +577,7 @@ struct OutputConfig
     time_interval_fraction::Float64
 end
 
-function OutputConfig(; enabled=true, base_dir="/output", time_interval_fraction=200.0)
+function OutputConfig(; enabled=true, base_dir="/output", time_interval_fraction=6000.0)
     return OutputConfig(enabled, base_dir, time_interval_fraction)
 end
 
@@ -879,7 +893,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 100.0)
+    simulation = Simulation(model, Δt = Δt, stop_time = 500)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
@@ -899,7 +913,7 @@ function HorizontalConvectionSimulation(;
     output_config = OutputConfig(
         enabled = output_writer, 
         base_dir = output_dir, 
-        time_interval_fraction = 200.0
+        time_interval_fraction = 6000.0
     )
 
     setup_output_writers!(

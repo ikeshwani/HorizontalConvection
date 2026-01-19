@@ -2,16 +2,16 @@ using NCDatasets
 using CairoMakie
 using Printf
 
-output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/CPU_test/bss_coldstart/256_32/"
+output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_Ra1e8/1024_128/"
 buoy_file = joinpath(output_dir, "buoyancy.nc")
 
-ds_b = NCDataset(buoy_file)
+ds_b = NCDataset(buoy_file, "r")
 b★ = ds_b.attrib["b★"]
 Lx = ds_b.attrib["Lx"]
 H = ds_b.attrib["H"]
 seasonal_amplitude = 0.0
 
-plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/CPU_test/base_turb/verification_plots"
+plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU_test/bss_Ra1e8_1024_128/verification_plots/"
 mkpath(plot_dir)
 
 function expected_surface_bc(x, t, b★, Lx)
@@ -19,26 +19,20 @@ function expected_surface_bc(x, t, b★, Lx)
     return b★ * bss
 end
 
-println("loading data from : $buoy_file")
+println("loading metadata from : $buoy_file")
 
-b = ds_b["b"][:, :, :, :]
+b = ds_b["b"] # DONT LOAD YET THE FILE IS TOO BIG
 x = ds_b["x_caa"][:]
 y = ds_b["y_aca"][:]
 z = ds_b["z_aac"][:]
 time = ds_b["time"][:]
-
-if ndims(b) == 4
-    b_surface = b[:, 1, end, :] # y=1 z=end=top
-elseif ndims(b) == 3 #2d sim
-    b_surface = b[:, end, :] #no y dim
-end
 
 Nx = ds_b.attrib["Nx"]
 Ny = ds_b.attrib["Ny"]
 Nz = ds_b.attrib["Nz"]
 Nt = length(time)
 
-println("Loaded data:")
+println("Loaded metadata:")
 println("  Nx = $Nx")
 println("  Nt = $Nt")
 println("  Time range: $(time[1]) to $(time[end])")
@@ -57,8 +51,16 @@ n_snaps = min(5, Nt)
 time_ind = round.(Int, range(1, Nt, length=n_snaps))
 
 colors = [:blue, :green, :orange, :red, :purple]
+
 for (i, tidx) in enumerate(time_ind)
-    lines!(ax1, x, b_surface[:, tidx],
+    #read only one slice
+    if ndims(b) == 4
+        b_surface = Array(b[:, 1, end, tidx])
+    else
+        b_surface = Array(b[:, end, tidx])
+    end
+
+    lines!(ax1, x, b_surface;
         label = @sprintf("t=%.2f", time[tidx]),
         color = colors[i],
         linewidth=2
@@ -90,10 +92,13 @@ for (plot_idx, tidx) in enumerate(comparison_ind)
             ylabel = "Surface Buoyancy", 
             title = @sprintf("t = %.2f", time[tidx]))
 
-    b_actual = b_surface[:, tidx]
+    if ndims(b) == 4
+        b_actual = Array(b[:, 1, end, tidx])
+    else
+        b_actual = Array(b[:, end, tidx])
+    end
 
-    b_expected = [expected_surface_bc(xi, time[tidx], b★, Lx)
-                    for xi in x]
+    b_expected = @. expected_surface_bc(x, time[tidx], b★, Lx)
 
     lines!(ax, x, b_actual, label="actual (simulation)",
             color=:blue, linewidth=2)
@@ -105,5 +110,7 @@ end
 
 save(joinpath(plot_dir, "2_actual_vs_expected.png"), fig2)
 println(" saved: 2_actual_vs_expected.png")
+
+close(ds_b)
 
 
