@@ -89,11 +89,11 @@ w_prime = zeros(Float32, Nx, Ny, Nz)
 
 #definitions for moving box average 
 
-Δt = time[8] - time[1]
+Δt = time[5] - time[1]
 Nt_window = round(Int, Δt)
 
 println("time 1 is", time[1])
-println("time 8 is", time[8])
+println("time 5 is", time[5])
 
 println(Nt_window)
 
@@ -130,7 +130,7 @@ for n in 1:Nt
     v_bar = dropdims(nanmean(nanmean(v_block, dims=2), dims=4); dims=(2,4))
     w_bar = dropdims(nanmean(nanmean(w_block, dims=2), dims=4); dims=(2,4))
 
-    #now bar velocities are functions of x and z_aac
+    #now bar velocities are functions of x, z, and t
 
     #we can solve for MKE density :  MKE(x,z,t)
     MKE_xz[:,:,n] .= 0.5 .* (u_bar.^2 .+ v_bar.^2 .+ w_bar.^2)
@@ -191,45 +191,57 @@ save(joinpath(plot_dir, "Ra1e8_KE_plot_timewindow.png"), fig)
 
 
 output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/"
-output_file = joinpath(output_dir, "kinetic_energetics.nc")
+output_file = joinpath(output_dir, "kinetic_energetics_smallerwindow.nc")
 
 @info "saving energetics to $output_file"
 
 NCDataset(output_file, "c") do ds_out
     #define dimensions 
     defDim(ds_out, "time", Nt)
+    defDim(ds_out, "x", Nx)
+    defDim(ds_out, "z", Nz)
 
     #define variables
     defVar(ds_out, "time", Float64, ("time",))
+    defVar(ds_out, "x", Float64, ("x",))
+    defVar(ds_out, "z", Float64, ("z",))
     defVar(ds_out, "KE", Float64, ("time",))
-    defVar(ds_out, "MKE Density", Float64, ("time",))
-    defVar(ds_out, "TKE Density", Float64, ("time",))
+    defVar(ds_out, "MKE_Density", Float64, ("x", "z", "time"))
+    defVar(ds_out, "TKE_Density", Float64, ("x", "z", "time"))
     defVar(ds_out, "MKE", Float64, ("time",))
     defVar(ds_out, "TKE", Float64, ("time",))
 
     #write data
     ds_out["time"][:] = time[1:Nt]
-    ds_out["KE"][:] = KE
-    ds_out["MKE Density"][:] = MKE_Density
-    ds_out["TKE Density"][:] = TKE_Density
-    ds_out["MKE"][:] = MKE
-    ds_out["TKE"][:] = TKE
+    ds_out["x"][:] = x
+    ds_out["z"][:] = z
+    ds_out["KE"][:] = KE_t
+    ds_out["MKE_Density"][:, :, :] = MKE_xz
+    ds_out["TKE_Density"][:, :, :] = TKE_xz
+    ds_out["MKE"][:] = MKE_t
+    ds_out["TKE"][:] = TKE_t
 
     #add attributes 
     ds_out["time"].attrib["units"] = "seconds"
     ds_out["time"].attrib["long_name"] = "time"
 
+    ds_out["x"].attrib["units"] = "m"
+    ds_out["x"].attrib["long_name"] = "x coordinate"
+    
+    ds_out["z"].attrib["units"] = "m"
+    ds_out["z"].attrib["long_name"] = "z coordinate"
+
     ds_out["KE"].attrib["units"] = "m²/s²"
     ds_out["KE"].attrib["long_name"] = "Volume-Averaged Total Kinetic Energy From Oceanostics Output"
     ds_out["KE"].attrib["description"] = "⟨KE⟩ = ∫ke dV / V_wet"
 
-    ds_out["MKE Density"].attrib["units"] = "m²/s²"
-    ds_out["MKE Density"].attrib["long_name"] = "Mean Kinetic Energy Density"
-    ds_out["MKE Density"].attrib["description"] = "MKE(x,z,t) = 0.5 * (ū² + v̄² + w̄²)"
+    ds_out["MKE_Density"].attrib["units"] = "m²/s²"
+    ds_out["MKE_Density"].attrib["long_name"] = "Mean Kinetic Energy Density"
+    ds_out["MKE_Density"].attrib["description"] = "MKE(x,z,t) = 0.5 * (ū² + v̄² + w̄²)"
     
-    ds_out["TKE Density"].attrib["units"] = "m²/s²"
-    ds_out["TKE Density"].attrib["long_name"] = "Turbulent Kinetic Energy Density"
-    ds_out["TKE Density"].attrib["description"] = "TKE(x,z,t) = 0.5 * ((u'²)_bar (v'²)_bar (w'²)_bar)"
+    ds_out["TKE_Density"].attrib["units"] = "m²/s²"
+    ds_out["TKE_Density"].attrib["long_name"] = "Turbulent Kinetic Energy Density"
+    ds_out["TKE_Density"].attrib["description"] = "TKE(x,z,t) = 0.5 * ((u'²)_bar (v'²)_bar (w'²)_bar)"
     
     ds_out["MKE"].attrib["units"] = "m²/s²"
     ds_out["MKE"].attrib["long_name"] = "Volume-Averaged Mean Kinetic Energy"
@@ -324,7 +336,7 @@ Colorbar(fig2[2,2], hm2)
 stride = 50
 frames = 1:stride:Nt   # or 1:5:Nt to subsample
 
-output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/Ra1e8_energetics.mp4"
+output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/Ra1e8_energetics_smallerwindow.mp4"
 
 record(fig2, output_file, frames; framerate = 8) do i
     frame[] = i

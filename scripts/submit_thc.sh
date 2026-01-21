@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name="horizontal-convection"             ## Name of the job.
+#SBATCH --job-name="horizontal-convection-winter-only"             ## Name of the job.
 #SBATCH --output="output_message/HC.%j.out"             ##output file
 #SBATCH --partition=gpuA40x4
 #SBATCH --mem=36G
@@ -8,16 +8,16 @@
 #SBATCH --ntasks-per-node=1                ## (-n) number of tasks to launch
 #SBATCH --cpus-per-task=4
 #SBATCH --constraint="scratch"
-#SBATCH --gpus-per-node=1
+#SBATCH --gpus-per-node=1                  #this is 0 if cpu run
 #SBATCH --gpu-bind=closest
-#SBATCH --account=bfxn-delta-gpu         ## my account name
+#SBATCH --account=bfxn-delta-gpu         ## my account name #change to cpu or gpu depending 
 #SBATCH --mail-user=ikeshwan@uci.edu
 #SBATCH --mail-type="BEGIN,END"
 #SBATCH -t 48:00:00
 
 # Run the julia script and save julia's update messages to the file out.txt
 module purge
-module load cudatoolkit
+module load cudatoolkit #remove for cpu run
 # module load julia/1.10.10
 
 cd /work/hdd/bfxn/ikeshwani/HorizontalConvection/scripts

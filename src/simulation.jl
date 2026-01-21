@@ -167,57 +167,56 @@ end
 struct BuoyancyForcing
     b★::Float64
     Lx::Float64
-    seasonal_amplitude::Float64 
+    winter_amplitude::Float64 
+    summer_amplitude::Float64 
     seasonal_period::Float64
 end
 
-function BuoyancyForcing(; b★, Lx, seasonal_amplitude, seasonal_period)
-    return BuoyancyForcing(b★, Lx, seasonal_amplitude, seasonal_period)
+function BuoyancyForcing(; b★, Lx, winter_amplitude, summer_amplitude, seasonal_period)
+    return BuoyancyForcing(b★, Lx, winter_amplitude, summer_amplitude, seasonal_period)
 end
 
 @inline function surface_buoyancy_2d(x, t, p)
-    #base spatial profile goes from -1 to 1
-    bss = (tanh(3 * (x + p.Lx/3)))
+    # base spatial profile goes from -1 to 1
+    b_BASE = (tanh(3 * (x + p.Lx/3)))
 
-        #for summer (cos=1) : i want to go from (0, 1) so (bss+1)/2
-    # for winter (cos=-1) : i want to go from (-2,1) so bss-1
-    #for base (cos=0) : i want (-1,1) so bss
-    if p.seasonal_amplitude == 0.0
-        return p.b★ * bss
-    else
-        seasonal = 0.5 * p.seasonal_amplitude * (1 + cos(2π * t / p.seasonal_period))
-        return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
-    end
+    # f is the spatial structure of the function that represents anomaly from base
+    f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
+
+    # S(t) is the seasonal clock: S<0 represents winter, S>0 represents summer
+    S = cos(2π * t / p.seasonal_period)
+
+    # we define S_summer and S_winter as positive and negative parts of S
+    S_summer = max(S, 0.0)
+    S_winter = min(S, 0.0)
+
+    return p.b★ * 
+            (b_BASE + 
+            f * (p.summer_amplitude * S_summer + 
+                 p.winter_amplitude * S_winter)
+            )
 end
-
-    # #we're going to split the bss profile into negative and postive sides or north/south sides because otherwise the result is symmetric forcings
-    # b_neg = min(bss, 0.0) # south : dense waters
-    # b_pos = max(bss, 0.0) # north : buoyant waters
-
-    # #when S=1 : winter , S=-1 : summer
-    # S = cos(2π * t / p.seasonal_period) 
-    
-    # #southern amplification (winter cooling, summer shutdown)
-    # south_factor = 1 + p.winter_amplitude * max(S, 0.0)
-    # south_factor *= max(1 - p.summer_amplitude * max(-S, 0.0), 0.0)
-
-    # #northern summer warming only
-    # north_offset = p.summer_amplitude * max(-S, 0.0)
-
-    # return p.b★ * (south_factor * b_neg + b_pos + north_offset)
-    
-
 
 
 @inline function surface_buoyancy_3d(x, y, t, p)
-    bss = (tanh(3 * (x + p.Lx/3)))
-    
-    if p.seasonal_amplitude == 0.0
-        return p.b★ * bss
-    else
-        seasonal = 0.5 * (1 + p.seasonal_amplitude * cos(2π * t / p.seasonal_period))
-        return p.b★ * ((1 - seasonal) * (bss-1) + seasonal * (bss + 1) / 2)
-    end
+    # base spatial profile goes from -1 to 1
+    b_BASE = (tanh(3 * (x + p.Lx/3)))
+
+    # f is the spatial structure of the function that represents anomaly from base
+    f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
+
+    # S(t) is the seasonal clock: S<0 represents winter, S>0 represents summer
+    S = cos(2π * t / p.seasonal_period)
+
+    # we define S_summer and S_winter as positive and negative parts of S
+    S_summer = max(S, 0.0)
+    S_winter = min(S, 0.0)
+
+    return p.b★ * 
+            (b_BASE + 
+            f * (p.summer_amplitude * S_summer + 
+                 p.winter_amplitude * S_winter)
+            )
 end
 
 function make_surface_buoyancy(forcing::BuoyancyForcing, Ny::Int)
@@ -697,7 +696,7 @@ end
 
 # filename generator 
 
-function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, seasonal_amplitude::Float64, numhill::Int, h₀_frac::Float64,
+function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, winter_amplitude::Float64, summer_amplitude::Float64, numhill::Int, h₀_frac::Float64,
                             Ra::Float64, b_init::Float64)
     """
     Generates filename prefix describing the simulation input
@@ -708,8 +707,12 @@ function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, seasonal
 
     external_wind = wind ? "_wind_forced" : nothing
 
-    if seasonal_amplitude!=0.0
-        b_time = "_temporalforcing"
+    if winter_amplitude == 0.0
+        b_time = "_summeronly"
+    elseif summer_amplitude == 0.0
+        b_time = "_winteronly"
+    elseif winter_amplitude != 0.0 & summer_amplitude != 0.0
+        b_time = "_seasonal"
     else
         b_time = nothing
     end
@@ -757,7 +760,8 @@ function HorizontalConvectionSimulation(;
     b_init = 0.0,
 
     #buoyancy forcing parameters
-    seasonal_amplitude = 0.0,
+    winter_amplitude = 0.0,
+    summer_amplitude = 0.0, 
     seasonal_period = 365.0, 
     custom_seasonal = nothing, 
 
@@ -836,7 +840,8 @@ function HorizontalConvectionSimulation(;
     forcing = BuoyancyForcing(
         b★ = b★, 
         Lx = domain.Lx, 
-        seasonal_amplitude = seasonal_amplitude, 
+        winter_amplitude = winter_amplitude, 
+        summer_amplitude = summer_amplitude,
         seasonal_period = seasonal_period
     )
 
@@ -848,7 +853,8 @@ function HorizontalConvectionSimulation(;
             parameters = (;
                 b★ = forcing.b★, 
                 Lx = domain.Lx,
-                seasonal_amplitude = forcing.seasonal_amplitude,
+                winter_amplitude = forcing.winter_amplitude,
+                summer_amplitude = forcing.summer_amplitude,
                 seasonal_period = forcing.seasonal_period
             )
         )
@@ -893,7 +899,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 500)
+    simulation = Simulation(model, Δt = Δt, stop_time = 120)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
@@ -909,7 +915,7 @@ function HorizontalConvectionSimulation(;
     simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
     # step 12. setup the output writers
-    filename_prefix = generate_filename(advection, coriolis, wind, seasonal_amplitude, numhill, h₀_frac, Ra, b_init)
+    filename_prefix = generate_filename(advection, coriolis, wind, winter_amplitude, summer_amplitude, numhill, h₀_frac, Ra, b_init)
     output_config = OutputConfig(
         enabled = output_writer, 
         base_dir = output_dir, 

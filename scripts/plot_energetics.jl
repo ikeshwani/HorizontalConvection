@@ -7,7 +7,7 @@ using NCDatasets
 #import the KE and PE energetics files that we saved
 
 ds_KE = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/kinetic_energetics.nc",
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/kinetic_energetics_smallerwindow.nc",
     "r"
 )
 
@@ -15,6 +15,8 @@ ds_PE = NCDataset(
     "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/energetics.nc",
     "r"
 )
+
+plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU_test/energyplots/"
 
 @info "Loading data from energetics files"
 
@@ -34,15 +36,15 @@ ax = Axis(fig[1,1],
             ylabel = "⟨E⟩ [m²/s²]", 
             title = @sprintf("Volume-Averaged Energies vs Time for Ra = %.2e", Ra))
 
-lines!(ax, time[1:Nt], MKE .+ TKE, linewidth=2, linestyle=:dash, color=:darkred, label="⟨MKE⟩ + ⟨TKE⟩")
-lines!(ax, time[1:Nt], KE, linewidth=2, linestyle=:dash, color=:salmon, label="⟨KE⟩ from Oceanostics Output")
-lines!(ax, time[1:Nt], MKE, linewidth=2, color=:purple4, label="⟨MKE⟩")
-lines!(ax, time[1:Nt], TKE, linewidth=2, color=:magenta, label="⟨TKE⟩")
-lines!(ax, time[1:Nt], PE, linewidth=2, color=:darkgreen, label="⟨PE⟩")
-lines!(ax, time[1:Nt], APE, linewidth=2, color=:navy, label="⟨APE⟩")
-lines!(ax, time[1:Nt], BPE, linewidth=2, color=:deepskyblue3, label="⟨BPE⟩")
+lines!(ax, time, MKE .+ TKE, linewidth=2, linestyle=:dash, color=:darkred, label="⟨MKE⟩ + ⟨TKE⟩")
+lines!(ax, time, KE, linewidth=2, linestyle=:dash, color=:salmon, label="⟨KE⟩ from Oceanostics Output")
+lines!(ax, time, MKE, linewidth=2, color=:purple4, label="⟨MKE⟩")
+lines!(ax, time, TKE, linewidth=2, color=:magenta, label="⟨TKE⟩")
+lines!(ax, time, PE, linewidth=2, color=:darkgreen, label="⟨PE⟩")
+lines!(ax, time, APE, linewidth=2, color=:navy, label="⟨APE⟩")
+lines!(ax, time, BPE, linewidth=2, color=:deepskyblue3, label="⟨BPE⟩")
 
 Legend(fig[1,2], ax)
 
-save(joinpath(plot_dir, "Ra1e8_all_energies.png"), fig)
-@info " saved Ra1e8_KE_plot"
+save(joinpath(plot_dir, "Ra1e8_all_energies_smallerwindow.png"), fig)
+@info " saved Ra1e8_energy_plot"
