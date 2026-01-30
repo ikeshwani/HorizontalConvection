@@ -183,6 +183,11 @@ end
     # f is the spatial structure of the function that represents anomaly from base
     f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
 
+    # if no seasonal forcing , skip the cosine (so there's no infinity error)
+    if p.seasonal_period == 0.0
+        return p.b★ * b_BASE
+    end
+
     # S(t) is the seasonal clock: S<0 represents winter, S>0 represents summer
     S = cos(2π * t / p.seasonal_period)
 
@@ -204,6 +209,11 @@ end
 
     # f is the spatial structure of the function that represents anomaly from base
     f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
+
+    # if no seasonal forcing, skip the cosine so there's no infinity error
+    if p.seasonal_period == 0.0
+        return p.b★ * b_BASE
+    end
 
     # S(t) is the seasonal clock: S<0 represents winter, S>0 represents summer
     S = cos(2π * t / p.seasonal_period)

@@ -4,6 +4,8 @@ authors = ["Henri F. Drake <hfdrake@uci.edu>"]
 version = "0.2.0"
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
 IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
