@@ -28,8 +28,9 @@ simulation = HorizontalConvectionSimulation(;
     b_init = -0.5,
 
     #buoyancy forcing parameters
-    seasonal_amplitude = 0.0,
-    seasonal_period = 30.0,
+    winter_amplitude = 0.0,
+    summer_amplitude = 0.0,
+    seasonal_period = 0.0, 
 
     #coriolis parameters
     coriolis = false, 

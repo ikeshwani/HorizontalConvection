@@ -840,9 +840,9 @@ function HorizontalConvectionSimulation(;
     forcing = BuoyancyForcing(
         b★ = b★, 
         Lx = domain.Lx, 
-        winter_amplitude = winter_amplitude, 
-        summer_amplitude = summer_amplitude,
-        seasonal_period = seasonal_period
+        winter_amplitude = winter_amplitude,
+        summer_amplitude = summer_amplitude, 
+        seasonal_period = seasonal_period 
     )
 
     surface_buoyancy_func = make_surface_buoyancy(forcing, domain.Ny)
@@ -899,7 +899,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 120)
+    simulation = Simulation(model, Δt = Δt, stop_time = 10)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
