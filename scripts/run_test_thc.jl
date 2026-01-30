@@ -1,22 +1,20 @@
 println(">>> STARTING JULIA SCRIPT <<<")
 
-println("importing CUDA")
-using CUDA
-@info "CUDA functional?" CUDA.functional()
-CUDA.versioninfo()
+println("julia version", VERSION)
+
+# println("importing CUDA")
+# using CUDA
+# @info "CUDA functional?" CUDA.functional()
+# CUDA.versioninfo()
 
 println("import Oceananigans and Simulation Package")
 using Oceananigans
-using TopographicHorizontalConvection:HorizontalConvectionSimulation
+using TopographicHorizontalConvection:HorizontalConvectionSimulation_TEST
 
 println("packages imported successfully")
 
-# simulation = HC_sim_test(;
-#                         Nx = 256, Ny = 16, Nz = 32)
-
-
-simulation = HorizontalConvectionSimulation(;
-   #domain parameters
+simulation = HorizontalConvectionSimulation_TEST(;
+                   #domain parameters
     Nx = 256, 
     Ny = 16,
     Nz = 32, 
@@ -65,7 +63,7 @@ simulation = HorizontalConvectionSimulation(;
 
     #computational parameters
     architecture = CPU()
-)
+    )
 
+run!(simulation, pickup=false)
 
-#run!(simulation, pickup=false)

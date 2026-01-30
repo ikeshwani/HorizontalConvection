@@ -4,12 +4,12 @@ using CairoMakie
 using Observables
 
 ds = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_Ra1e8/1024_128/buoyancy.nc",
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/b_winteronly/Ra1e6/320_40/buoyancy.nc",
     "r"
 )
 
 ds_v = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_Ra1e8/1024_128/velocities.nc", 
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/b_winteronly/Ra1e6/320_40/velocities.nc", 
     "r"
 )
 
@@ -54,9 +54,9 @@ bₙ = @lift begin
 end
 
 Uₙ = @lift begin
-    u_slice = Array(u[1:512, yidx, 1:64, $n])
-    v_slice = Array(v[1:512, yidx, 1:64, $n])
-    w_slice = Array(w[1:512, yidx, 1:64, $n])
+    u_slice = Array(u[1:320, yidx, 1:40, $n])
+    v_slice = Array(v[1:320, yidx, 1:40, $n])
+    w_slice = Array(w[1:320, yidx, 1:40, $n])
     sqrt.(u_slice.^2 .+ v_slice.^2 .+ w_slice.^2)
 end
 
@@ -123,7 +123,7 @@ Colorbar(fig[2, 2], hm_u)
 
 frames = 1:Nt   # or 1:5:Nt to subsample
 
-output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/bss_Ra1e8_1024_128.mp4"
+output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/b_winteronly.mp4"
 
 record(fig2, output_file, frames; framerate = 8) do i
     n[] = i

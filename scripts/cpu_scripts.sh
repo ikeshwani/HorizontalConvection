@@ -7,11 +7,11 @@
 #SBATCH --account=bfxn-delta-cpu
 #SBATCH --mem=16G
 #SBATCH --time=12:00:00
-#SBATCH --output="output_message/Energyplot.%j.out"
+#SBATCH --output="output_message/cputest.%j.out"
 #SBATCH --mail-user=ikeshwan@uci.edu
 #SBATCH --mail-type="BEGIN,END"
 
 module purge
 
 cd /work/hdd/bfxn/ikeshwani/HorizontalConvection/scripts
-julia --project=../ plot_energetics.jl
+julia --project=../ run_test_thc.jl

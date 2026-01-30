@@ -2,7 +2,7 @@
 
 julia_version = "1.10.10"
 manifest_format = "2.0"
-project_hash = "2cb4392e21784905057c1933e4fd1df52b975abc"
+project_hash = "db530b294d6149452c773c2fecb2dabe5a453c16"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -133,9 +133,9 @@ version = "0.4.8"
 
 [[deps.BFloat16s]]
 deps = ["LinearAlgebra", "Printf", "Random"]
-git-tree-sha1 = "e386db8b4753b42caac75ac81d0a4fe161a68a97"
+git-tree-sha1 = "0a6d6d072cb5f2baeba7667023075801f6ea4a7d"
 uuid = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
-version = "0.6.1"
+version = "0.6.0"
 
 [[deps.Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
@@ -203,15 +203,15 @@ version = "5.9.4"
 
 [[deps.CUDA_Compiler_jll]]
 deps = ["Artifacts", "CUDA_Driver_jll", "CUDA_Runtime_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "TOML"]
-git-tree-sha1 = "8fd66238d13b624bf149758177a1248d14adf844"
+git-tree-sha1 = "b63428872a0f60d87832f5899369837cd930b76d"
 uuid = "d1e2174e-dfdc-576e-b43e-73b79eb1aca8"
-version = "0.3.1+1"
+version = "0.3.0+0"
 
 [[deps.CUDA_Driver_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "23bf4e60006b78544f753880fbcf1aa158a7669c"
+git-tree-sha1 = "2023be0b10c56d259ea84a94dbfc021aa452f2c6"
 uuid = "4ee394cb-3365-5eb0-8335-949819d2adfc"
-version = "13.1.0+2"
+version = "13.0.2+0"
 
 [[deps.CUDA_Runtime_Discovery]]
 deps = ["Libdl"]
@@ -611,9 +611,9 @@ version = "0.2.0"
 
 [[deps.GPUCompiler]]
 deps = ["ExprTools", "InteractiveUtils", "LLVM", "Libdl", "Logging", "PrecompileTools", "Preferences", "Scratch", "Serialization", "TOML", "Tracy", "UUIDs"]
-git-tree-sha1 = "966946d226e8b676ca6409454718accb18c34c54"
+git-tree-sha1 = "6e5a25bc455da8e8d88b6b7377e341e9af1929f0"
 uuid = "61eb1bfa-7361-4325-ad38-22787b887f55"
-version = "1.8.2"
+version = "1.7.5"
 
 [[deps.GPUToolbox]]
 deps = ["LLVM"]
@@ -1071,9 +1071,9 @@ version = "1.11.0+1"
 
 [[deps.LibTracyClient_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "d4e20500d210247322901841d4eafc7a0c52642d"
+git-tree-sha1 = "d2bc4e1034b2d43076b50f0e34ea094c2cb0a717"
 uuid = "ad6e5548-8b26-5c9f-8ef3-ef0ad883f3a5"
-version = "0.13.1+0"
+version = "0.9.1+6"
 
 [[deps.Libdl]]
 uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
@@ -1281,14 +1281,10 @@ weakdeps = ["MPI"]
     NCDatasetsMPIExt = "MPI"
 
 [[deps.NVTX]]
-deps = ["JuliaNVTXCallbacks_jll", "Libdl", "NVTX_jll"]
-git-tree-sha1 = "a9083c3e469e63cca454d1fc3b19472d9d92c14a"
+deps = ["Colors", "JuliaNVTXCallbacks_jll", "Libdl", "NVTX_jll"]
+git-tree-sha1 = "6b573a3e66decc7fc747afd1edbf083ff78c813a"
 uuid = "5da4648a-3479-48b8-97b9-01cb529c0a1f"
-version = "1.0.3"
-weakdeps = ["Colors"]
-
-    [deps.NVTX.extensions]
-    NVTXColorsExt = "Colors"
+version = "1.0.1"
 
 [[deps.NVTX_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1710,9 +1706,9 @@ version = "0.3.10"
 
 [[deps.SentinelArrays]]
 deps = ["Dates", "Random"]
-git-tree-sha1 = "ebe7e59b37c400f694f52b58c93d26201387da70"
+git-tree-sha1 = "712fb0231ee6f9120e005ccd56297abbc053e7e0"
 uuid = "91c51154-3ec4-41a3-a24f-3f23e20d615c"
-version = "1.4.9"
+version = "1.4.8"
 
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"

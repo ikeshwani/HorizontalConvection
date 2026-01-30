@@ -183,11 +183,6 @@ end
     # f is the spatial structure of the function that represents anomaly from base
     f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
 
-    # if no seasonal forcing , skip the cosine (so there's no infinity error)
-    if p.seasonal_period == 0.0
-        return p.b★ * b_BASE
-    end
-
     # S(t) is the seasonal clock: S<0 represents winter, S>0 represents summer
     S = cos(2π * t / p.seasonal_period)
 
@@ -209,11 +204,6 @@ end
 
     # f is the spatial structure of the function that represents anomaly from base
     f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
-
-    # if no seasonal forcing, skip the cosine so there's no infinity error
-    if p.seasonal_period == 0.0
-        return p.b★ * b_BASE
-    end
 
     # S(t) is the seasonal clock: S<0 represents winter, S>0 represents summer
     S = cos(2π * t / p.seasonal_period)
@@ -452,28 +442,6 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
     H, Lx, Ly = domain.H, domain.Lx, domain.Ly
     Nx, Ny, Nz = domain.Nx, domain.Ny, domain.Nz
 
-    # chebychev spacing for x-axis (more cells at left boundary)
-    # this maps from [0, Lx] with refinement at x=0
-    # actually had to use a blended function because previous function made smallest grid 200 times smaller than largest
-
-    # x_stretch = 0.1 
-    # z_stretch = 0.05
-
-    # function blended_x_faces(i)
-    #     uniform = -Lx/2 + Lx * (i-1) / Nx
-    #     cheby = Lx * (1- cos(π * (i-1) / Nx)) / 2 - Lx/2
-    #     return (1- x_stretch) * uniform + x_stretch * cheby
-    # end
-
-    # function blended_z_faces(k)
-    #     uniform = -H + H * (k-1) / Nz
-    #     cheby = -H + H * (1 - cos(π * (k-1) / Nz)) / 2
-    #     return (1 - z_stretch) * uniform + z_stretch * cheby
-    # end
-
-    # chebychev_spaced_x_faces(i) = Lx * (1 - cos(π * (i-1) / Nx)) / 2 - Lx/2
-    # chebychev_spaced_z_faces(k) = - H * (1 + cos(π * (k-1) / Nz)) / 2
-
     if Ny  == 1
         #2D Grid with y dimension flat
 
@@ -521,25 +489,6 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
-
-        # #### DEBUGGING OUTPUT Δx and Δz 
-
-        # #x_faces = xnodes(cpu_grid, Face())
-        # #z_faces = znodes(cpu_grid, Face())
-
-        # Δx = xspacings(cpu_grid, Center())
-        # Δz = zspacings(cpu_grid, Center())
-
-        # println("grid spacing diagnostics: ")
-        # println("min Δx = ", minimum(Δx))
-        # println("max Δx = ", maximum(Δx))
-        # println("ratio Δx = ", maximum(Δx) / minimum(Δx))
-
-        # println("min Δz = ", minimum(Δz))
-        # println("max Δz = ", maximum(Δz))
-        # println("ratio Δz = ", maximum(Δz) / minimum(Δz))
-
-        # println( "-------------------------")
 
         seafloor_heights = zeros(Nx, Ny)
         for i in 1:Nx , j in 1:Ny
@@ -643,7 +592,6 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     model = simulation.model
     τ_eq = sqrt(physics.Ra)
     time_interval = τ_eq / output_config.time_interval_fraction
-    # time_interval = 0.1
 
     #global attributes to output in data file
     global_attributes = Dict(
@@ -763,7 +711,7 @@ function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, winter_a
         b_time = "_summeronly"
     elseif summer_amplitude == 0.0
         b_time = "_winteronly"
-    elseif winter_amplitude != 0.0 && summer_amplitude != 0.0
+    elseif winter_amplitude != 0.0 & summer_amplitude != 0.0
         b_time = "_seasonal"
     else
         b_time = nothing
@@ -790,13 +738,13 @@ function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, winter_a
 end
 
 ######## MAIN SIMULATION Function
-function HorizontalConvectionSimulation(;
+function HorizontalConvectionSimulation_TEST(;
    #domain parameters
     Nx = 256, 
     Ny = 1,
     Nz = 32, 
     H = 1.0, 
-    α = 8.0,
+    α = 8.0, 
 
     #topography parameters
     h₀_frac = 0.6, 
@@ -814,7 +762,8 @@ function HorizontalConvectionSimulation(;
     #buoyancy forcing parameters
     winter_amplitude = 0.0,
     summer_amplitude = 0.0, 
-    seasonal_period = 365.0,
+    seasonal_period = 365.0, 
+    custom_seasonal = nothing, 
 
     #coriolis parameters
     coriolis = false, 
@@ -844,12 +793,15 @@ function HorizontalConvectionSimulation(;
 
     # step 1. construct domain using DomainConfig
     domain = DomainConfig(H=H, α=α, Nx=Nx, Ny=Ny, Nz=Nz)
+    println("domain configured")
 
     # step 2. construct seafloor using make_seafloor
     seafloor = make_seafloor(domain, h₀_frac, numhill)
+    println("seafloor constructed")
 
     #step 3. construct the grid using make_grid
     grid = make_grid(domain, seafloor, architecture)
+    println("grid constructed")
 
     #step 4. construct physics params using PhysicsParams
     physics = PhysicsParams(Ra=Ra, Pr=Pr, b★=b★, H=H, advection=advection)
@@ -891,12 +843,14 @@ function HorizontalConvectionSimulation(;
     forcing = BuoyancyForcing(
         b★ = b★, 
         Lx = domain.Lx, 
-        winter_amplitude = winter_amplitude,
-        summer_amplitude = summer_amplitude, 
-        seasonal_period = seasonal_period 
+        winter_amplitude = winter_amplitude, 
+        summer_amplitude = summer_amplitude,
+        seasonal_period = seasonal_period
     )
 
     surface_buoyancy_func = make_surface_buoyancy(forcing, domain.Ny)
+
+    println("surface buoyancy forcing created")
 
     b_bcs = FieldBoundaryConditions(
         top = ValueBoundaryCondition(
@@ -937,6 +891,8 @@ function HorizontalConvectionSimulation(;
         boundary_conditions = boundary_conditions
     )
 
+    println("model set up with timestepper, pressure solver, boundary conditions")
+
     # step 9. set the initial conditions
     B₀ = make_initial_buoyancy(b_init, domain.Ny)
     println("B₀ created: " , typeof(B₀))
@@ -950,8 +906,12 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 100)
+    println("timestep determined using diffusive vs advective timescale")
+
+    simulation = Simulation(model, Δt = Δt, stop_time = 10)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
+
+    println("simulation initialized! about to start ...")
 
     #step 11. add timestepper
 

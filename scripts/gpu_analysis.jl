@@ -4,7 +4,7 @@ using NCDatasets
 using Statistics
 using Printf
 
-output_dir =  "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/"
+output_dir =  "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/test/Ra1e6/320_40/"
 
 buoy_file = joinpath(output_dir, "buoyancy.nc")
 oc_file = joinpath(output_dir, "oceanostics.nc")
@@ -19,46 +19,48 @@ ds_o = NCDataset(oc_file, "r")
 # H = ds_b.attrib["H"]
 ν = ds_b.attrib["ν"]
 
-b = ds_b["b"] # DONT LOAD YET THE FILE IS TOO BIG
+b = ds_b["b"][:, :, :, :] # DONT LOAD YET THE FILE IS TOO BIG
 x = ds_b["x_caa"][:]
 # y = ds_b["y_aca"][:]
 # z = ds_b["z_aac"][:]
 time = ds_b["time"][:]
 
-Δx = minimum(diff(x))
+println("size of b data : ", size(b))
 
-ε = ds_o["ε"]
-χ = ds_o["χ"]
+# Δx = minimum(diff(x))
 
-function is_kolmogorov_resolved_from_ε_max(Δx, ε_max, ν)
-    η_min = (ν^3 / ε_max)^(1/4)
-    return Δx < η_min, η_min
-end
+# ε = ds_o["ε"]
+# χ = ds_o["χ"]
 
-function compute_ε_max(ds_o)
-    ε = ds_o["ε"]
-    Nx, Ny, Nz, Nt = size(ε)
+# function is_kolmogorov_resolved_from_ε_max(Δx, ε_max, ν)
+#     η_min = (ν^3 / ε_max)^(1/4)
+#     return Δx < η_min, η_min
+# end
 
-    ε_max = 0.0
+# function compute_ε_max(ds_o)
+#     ε = ds_o["ε"]
+#     Nx, Ny, Nz, Nt = size(ε)
 
-    for t in 1:Nt
-        for k in 1:Nz
-            ε_plane = view(ε, :, :, k, t)
-            ε_max = max(ε_max, maximum(ε_plane))
-        end
-    end
+#     ε_max = 0.0
 
-    return ε_max
-end
+#     for t in 1:Nt
+#         for k in 1:Nz
+#             ε_plane = view(ε, :, :, k, t)
+#             ε_max = max(ε_max, maximum(ε_plane))
+#         end
+#     end
 
-ε_max = compute_ε_max(ds_o)
-is_it, η_min = is_kolmogorov_resolved_from_ε_max(Δx, ε_max, ν)
+#     return ε_max
+# end
+
+# ε_max = compute_ε_max(ds_o)
+# is_it, η_min = is_kolmogorov_resolved_from_ε_max(Δx, ε_max, ν)
 
 
-println("kolmogorov scale resolved for the Ra1e8 simulation: ", is_it)
-println("kolmogorov scale of Ra1e8 sim : ", η_min)
-# println("maximum KE dissipation : ", ε_max)
-# println()
+# println("kolmogorov scale resolved for the Ra1e8 simulation: ", is_it)
+# println("kolmogorov scale of Ra1e8 sim : ", η_min)
+# # println("maximum KE dissipation : ", ε_max)
+# # println()
 
 
 
