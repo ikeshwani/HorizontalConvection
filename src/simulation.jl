@@ -452,14 +452,47 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
     H, Lx, Ly = domain.H, domain.Lx, domain.Ly
     Nx, Ny, Nz = domain.Nx, domain.Ny, domain.Nz
 
+    """
+    add chebychev grid spacing at for x and z axes
+        specifically at the left boundary in x 
+        top and bottom in z
+    """
+
+    x_stretch = 0.15
+    z_stretch = 0.3 
+
+    function left_refined_x_faces(i, x_stretch=0.15)
+        ξ = (i - 1) / Nx 
+
+        β = 3.0 * x_stretch
+        if β > 0.01 
+            stretched = (exp(β * ξ) - 1) / (exp(β) - 1)
+        else
+            stretched = ξ
+        end
+
+        return -Lx/2 + Lx * stretched
+    end
+
+    function z_chebychev_grid(k, z_stretch=0.3)
+        ξ = (k - 1) / Nz 
+        cheby = 0.5 * (1 - cos(π * ξ))
+        uniform = ξ
+
+        stretched = (1 - z_stretch) * uniform + z_stretch * cheby
+
+        #map to domain [-H, 0]
+        return -H + H * stretched 
+    end
+
     if Ny  == 1
         #2D Grid with y dimension flat
 
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Nz), 
-            x = (-Lx/2, Lx/2), 
-            z = (-H, 0),
+            x = left_refined_x_faces, 
+            z = z_chebychev_grid,
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -474,8 +507,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Nz), 
-            x = (-Lx/2, Lx/2), 
-            z = (-H, 0), 
+            x = left_refined_x_faces, 
+            z = z_chebychev_grid, 
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -493,9 +526,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Ny, Nz), 
-            x = (-Lx/2, Lx/2), 
+            x = left_refined_x_faces, 
             y = (-Ly/2, Ly/2), 
-            z = (-H, 0), 
+            z = z_chebychev_grid, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -511,9 +544,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Ny, Nz),
-            x = (-Lx/2, Lx/2), 
+            x = left_refined_x_faces, 
             y = (-Ly/2, Ly/2), 
-            z = (-H, 0), 
+            z = z_chebychev_grid, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -602,6 +635,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     model = simulation.model
     τ_eq = sqrt(physics.Ra)
     time_interval = τ_eq / output_config.time_interval_fraction
+    time_interval = 0.1
 
     #global attributes to output in data file
     global_attributes = Dict(
@@ -810,6 +844,9 @@ function HorizontalConvectionSimulation(;
     #step 3. construct the grid using make_grid
     grid = make_grid(domain, seafloor, architecture)
 
+    @info "grid created : left refinement with x_stretch = $x_stretch and
+             top and bottom refinement with z_stretch = $z_stretch"
+
     #step 4. construct physics params using PhysicsParams
     physics = PhysicsParams(Ra=Ra, Pr=Pr, b★=b★, H=H, advection=advection)
 
@@ -909,7 +946,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 10)
+    simulation = Simulation(model, Δt = Δt, stop_time = 50)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
