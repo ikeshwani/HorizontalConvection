@@ -204,8 +204,8 @@ end
 end
 
 
-@inline function surface_buoyancy_3d(x, y, t, p)
-    # base spatial profile goes from -1 to 1
+@inline function surface_buoyancy_3d(x, y, t, p
+	    # base spatial profile goes from -1 to 1
     b_BASE = (tanh(3 * (x + p.Lx/3)))
 
     # f is the spatial structure of the function that represents anomaly from base
@@ -459,21 +459,31 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         top and bottom in z
     """
 
-    # set x_stretch = z_stretch == 0 for uniform grid 
+    x_stretch = 0.15
+    z_stretch = 0.3 
 
-    x_stretch = 0.3
-    z_stretch = 0.4
+    function left_refined_x_faces(i, x_stretch=0.15)
+        ξ = (i - 1) / Nx 
 
-    function chebychev_x_faces(i)
-        uniform = -Lx/2 + Lx * (i-1) / Nx
-        cheby = Lx * (1 - cos(π * (i-1) / Nx)) / 2 - Lx/2
-        return (1 - x_stretch) * uniform + x_stretch * cheby
+        β = 3.0 * x_stretch
+        if β > 0.01 
+            stretched = (exp(β * ξ) - 1) / (exp(β) - 1)
+        else
+            stretched = ξ
+        end
+
+        return -Lx/2 + Lx * stretched
     end
 
-    function chebychev_z_faces(k)
-        uniform = -H + H * (k-1) / Nz
-        cheby = -H + H * (1 - cos(π * (k-1) / Nz)) / 2
-        return (1 - z_stretch) * uniform + z_stretch * cheby
+    function z_chebychev_grid(k, z_stretch=0.3)
+        ξ = (k - 1) / Nz 
+        cheby = 0.5 * (1 - cos(π * ξ))
+        uniform = ξ
+
+        stretched = (1 - z_stretch) * uniform + z_stretch * cheby
+
+        #map to domain [-H, 0]
+        return -H + H * stretched 
     end
 
     if Ny  == 1
@@ -482,8 +492,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Nz), 
-            x = chebychev_x_faces, 
-            z = chebychev_z_faces,
+            x = left_refined_x_faces, 
+            z = z_chebychev_grid,
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -498,8 +508,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Nz), 
-            x = chebychev_x_faces, 
-            z = chebychev_z_faces, 
+            x = left_refined_x_faces, 
+            z = z_chebychev_grid, 
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -517,9 +527,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Ny, Nz), 
-            x = chebychev_x_faces, 
+            x = left_refined_x_faces, 
             y = (-Ly/2, Ly/2), 
-            z = chebychev_z_faces, 
+            z = z_chebychev_grid, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -554,9 +564,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Ny, Nz),
-            x = chebychev_x_faces, 
+            x = left_refined_x_faces, 
             y = (-Ly/2, Ly/2), 
-            z = chebychev_z_faces, 
+            z = z_chebychev_grid, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -645,7 +655,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     model = simulation.model
     τ_eq = sqrt(physics.Ra)
     time_interval = τ_eq / output_config.time_interval_fraction
-    # time_interval = 0.1
+    time_interval = 0.1
 
     #global attributes to output in data file
     global_attributes = Dict(
@@ -853,6 +863,9 @@ function HorizontalConvectionSimulation(;
     #step 3. construct the grid using make_grid
     grid = make_grid(domain, seafloor, architecture)
 
+    @info "grid created : left refinement with x_stretch = $x_stretch and
+             top and bottom refinement with z_stretch = $z_stretch"
+
     #step 4. construct physics params using PhysicsParams
     physics = PhysicsParams(Ra=Ra, Pr=Pr, b★=b★, H=H, advection=advection)
 
@@ -952,7 +965,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 10)
+    simulation = Simulation(model, Δt = Δt, stop_time = 50)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
