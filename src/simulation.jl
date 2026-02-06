@@ -15,6 +15,7 @@
 const Ω = 7.292115e-5 # earth's rotation rate in s⁻¹
 const R = 6.371e6 # earth's radius in m
 
+using NCDatasets
 using Oceananigans
 using Printf
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -210,7 +211,7 @@ end
     # f is the spatial structure of the function that represents anomaly from base
     f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
 
-    # if no seasonal forcing, skip the cosine so there's no infinity error
+    # if no seasonal forcing , skip the cosine (so there's no infinity error)
     if p.seasonal_period == 0.0
         return p.b★ * b_BASE
     end
@@ -452,27 +453,28 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
     H, Lx, Ly = domain.H, domain.Lx, domain.Ly
     Nx, Ny, Nz = domain.Nx, domain.Ny, domain.Nz
 
-    # chebychev spacing for x-axis (more cells at left boundary)
-    # this maps from [0, Lx] with refinement at x=0
-    # actually had to use a blended function because previous function made smallest grid 200 times smaller than largest
+    """
+    add chebychev grid spacing at for x and z axes
+        specifically at the left boundary in x 
+        top and bottom in z
+    """
 
-    # x_stretch = 0.1 
-    # z_stretch = 0.05
+    # set x_stretch = z_stretch == 0 for uniform grid 
 
-    # function blended_x_faces(i)
-    #     uniform = -Lx/2 + Lx * (i-1) / Nx
-    #     cheby = Lx * (1- cos(π * (i-1) / Nx)) / 2 - Lx/2
-    #     return (1- x_stretch) * uniform + x_stretch * cheby
-    # end
+    x_stretch = 0.3
+    z_stretch = 0.4
 
-    # function blended_z_faces(k)
-    #     uniform = -H + H * (k-1) / Nz
-    #     cheby = -H + H * (1 - cos(π * (k-1) / Nz)) / 2
-    #     return (1 - z_stretch) * uniform + z_stretch * cheby
-    # end
+    function chebychev_x_faces(i)
+        uniform = -Lx/2 + Lx * (i-1) / Nx
+        cheby = Lx * (1 - cos(π * (i-1) / Nx)) / 2 - Lx/2
+        return (1 - x_stretch) * uniform + x_stretch * cheby
+    end
 
-    # chebychev_spaced_x_faces(i) = Lx * (1 - cos(π * (i-1) / Nx)) / 2 - Lx/2
-    # chebychev_spaced_z_faces(k) = - H * (1 + cos(π * (k-1) / Nz)) / 2
+    function chebychev_z_faces(k)
+        uniform = -H + H * (k-1) / Nz
+        cheby = -H + H * (1 - cos(π * (k-1) / Nz)) / 2
+        return (1 - z_stretch) * uniform + z_stretch * cheby
+    end
 
     if Ny  == 1
         #2D Grid with y dimension flat
@@ -480,8 +482,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Nz), 
-            x = (-Lx/2, Lx/2), 
-            z = (-H, 0),
+            x = chebychev_x_faces, 
+            z = chebychev_z_faces,
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -496,8 +498,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Nz), 
-            x = (-Lx/2, Lx/2), 
-            z = (-H, 0), 
+            x = chebychev_x_faces, 
+            z = chebychev_z_faces, 
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -515,9 +517,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Ny, Nz), 
-            x = (-Lx/2, Lx/2), 
+            x = chebychev_x_faces, 
             y = (-Ly/2, Ly/2), 
-            z = (-H, 0), 
+            z = chebychev_z_faces, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -552,9 +554,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Ny, Nz),
-            x = (-Lx/2, Lx/2), 
+            x = chebychev_x_faces, 
             y = (-Ly/2, Ly/2), 
-            z = (-H, 0), 
+            z = chebychev_z_faces, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -694,9 +696,9 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     # buoyancy output
     simulation.output_writers[:buoyancy] = NetCDFWriter(
-        model, (; b, chi=χ, ∫ϕz = bw), 
-        schedule = TimeInterval(time_interval), 
+        model, (; b, chi=χ, ∫ϕz = bw);
         filename = joinpath(project_dir, "buoyancy.nc"), 
+        schedule = TimeInterval(time_interval), 
         with_halos = false, 
         global_attributes = global_attributes,
         overwrite_existing = true
@@ -704,9 +706,9 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     # velocities output
     simulation.output_writers[:velocities] = NetCDFWriter(
-        model, (; u, v, w), 
+        model, (; u, v, w);
+        filename = joinpath(project_dir, "velocities.nc"),
         schedule = TimeInterval(time_interval),
-        filename = joinpath(project_dir, "velocities.nc"), 
         with_halos = false, 
         global_attributes = global_attributes,
         overwrite_existing = true
@@ -714,10 +716,10 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     #section section_snapshots
     simulation.output_writers[:section_snapshots] = NetCDFWriter(
-        model, (; b, ke, pe), 
+        model, (; b, ke, pe);
+        filename = joinpath(project_dir, "section_snapshots.nc"),
         schedule = TimeInterval(1), 
         indices = indices, 
-        filename = joinpath(project_dir, "section_snapshots.nc"), 
         with_halos = false, 
         global_attributes = global_attributes, 
         overwrite_existing = true
@@ -725,9 +727,9 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     # Zonal time means
     simulation.output_writers[:zonal_time_means] = NetCDFWriter(
-        model, (; b=b_avg_y), 
-        schedule = AveragedTimeInterval(1, window=1), 
-        filename = joinpath(project_dir, "zonal_time_means.nc"), 
+        model, (; b=b_avg_y);
+        filename = joinpath(project_dir, "zonal_time_means.nc"),
+        schedule = AveragedTimeInterval(1, window=1),
         with_halos = false, 
         global_attributes = global_attributes, 
         overwrite_existing = true
@@ -735,10 +737,10 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     #oceanostics diagnostics 
     simulation.output_writers[:oceanostics] = NetCDFWriter(
-        model, (; ke, ε, χ), 
+        model, (; ke, ε, χ);
+        filename = joinpath(project_dir, "oceanostics.nc"), 
         schedule = TimeInterval(time_interval), 
         indices = indices, 
-        filename = joinpath(project_dir, "oceanostics.nc"), 
         with_halos = false, 
         global_attributes = global_attributes, 
         overwrite_existing = true
@@ -891,9 +893,9 @@ function HorizontalConvectionSimulation(;
     forcing = BuoyancyForcing(
         b★ = b★, 
         Lx = domain.Lx, 
-        winter_amplitude = winter_amplitude,
-        summer_amplitude = summer_amplitude, 
-        seasonal_period = seasonal_period 
+        winter_amplitude = winter_amplitude, 
+        summer_amplitude = summer_amplitude,
+        seasonal_period = seasonal_period
     )
 
     surface_buoyancy_func = make_surface_buoyancy(forcing, domain.Ny)
@@ -950,7 +952,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 100)
+    simulation = Simulation(model, Δt = Δt, stop_time = 10)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
