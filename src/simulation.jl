@@ -204,8 +204,8 @@ end
 end
 
 
-@inline function surface_buoyancy_3d(x, y, t, p
-	    # base spatial profile goes from -1 to 1
+@inline function surface_buoyancy_3d(x, y, t, p)
+	# base spatial profile goes from -1 to 1
     b_BASE = (tanh(3 * (x + p.Lx/3)))
 
     # f is the spatial structure of the function that represents anomaly from base
@@ -457,12 +457,11 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
     add chebychev grid spacing at for x and z axes
         specifically at the left boundary in x 
         top and bottom in z
-    """
+    """ 
+    x_stretch = 0.54
+    z_stretch = 0.75
 
-    x_stretch = 0.15
-    z_stretch = 0.3 
-
-    function left_refined_x_faces(i, x_stretch=0.15)
+    function left_refined_x_faces(i)
         ξ = (i - 1) / Nx 
 
         β = 3.0 * x_stretch
@@ -475,7 +474,7 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         return -Lx/2 + Lx * stretched
     end
 
-    function z_chebychev_grid(k, z_stretch=0.3)
+    function z_chebychev_grid(k)
         ξ = (k - 1) / Nz 
         cheby = 0.5 * (1 - cos(π * ξ))
         uniform = ξ
@@ -863,8 +862,8 @@ function HorizontalConvectionSimulation(;
     #step 3. construct the grid using make_grid
     grid = make_grid(domain, seafloor, architecture)
 
-    @info "grid created : left refinement with x_stretch = $x_stretch and
-             top and bottom refinement with z_stretch = $z_stretch"
+    @info "grid created : left refinement with x_stretch = 0.54 and
+             top and bottom refinement with z_stretch = 0.75"
 
     #step 4. construct physics params using PhysicsParams
     physics = PhysicsParams(Ra=Ra, Pr=Pr, b★=b★, H=H, advection=advection)
@@ -965,7 +964,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 50)
+    simulation = Simulation(model, Δt = Δt, stop_time = 500.0)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper
@@ -973,10 +972,15 @@ function HorizontalConvectionSimulation(;
     wizard = TimeStepWizard(cfl = physics.cfl, diffusive_cfl = 0.2)
     simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(50))
 
-    progress(sim) = @printf("i: % 6d, sim time: % 1.3f, wall_time: % 10s, Δt: % 1.4f, advective CFL: %.2e, diffusive CFL: %.2e\n",
+    progress(sim) = begin
+    
+    @printf("i: % 6d, sim time: % 1.3f, wall_time: % 10s, Δt: % 1.4f, advective CFL: %.2e, diffusive CFL: %.2e\n",
         iteration(sim), time(sim), prettytime(sim.run_wall_time), 
         sim.Δt, AdvectiveCFL(sim.Δt)(sim.model), DiffusiveCFL(sim.Δt)(sim.model)
     )
+
+    flush(stdout)
+    end
 
     simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
