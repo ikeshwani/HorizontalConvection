@@ -1,4 +1,4 @@
-println(">>> starting run case 1 : 2x stretching <<<")
+println(">>> starting run case 1 : 8x stretching <<<")
 
 using CUDA
 using Oceananigans
@@ -11,9 +11,9 @@ simulation = HorizontalConvectionSimulation(;
     Nz = 64, 
     H = 1.0, 
     α = 8.0,
-    x_stretch = 0.24,   #2x stretch
-    z_stretch = 0.41,   #2x stretch
-    stop_time = 1.0,
+    x_stretch = 0.70,   # 8x stretch
+    z_stretch = 0.85,   # 8x stretch
+    stop_time = 10.0,
 
     #topography parameters
     h₀_frac = 0.6, 
@@ -52,8 +52,8 @@ simulation = HorizontalConvectionSimulation(;
     SO_westerlies_width = 10.0,
 
     #output parameters
-    output_writer = false,
-    output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_2x_stretch/b_base/Ra1e10/",
+    output_writer = true,
+    output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e9/",
 
     #computational parameters
     architecture = GPU()

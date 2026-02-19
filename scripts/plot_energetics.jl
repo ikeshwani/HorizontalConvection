@@ -7,12 +7,12 @@ using NCDatasets
 #import the KE and PE energetics files that we saved
 
 ds_KE = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/kinetic_energetics_smallerwindow.nc",
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_5x_stretch/b_base/Ra1e7/512_64/KE.nc",
     "r"
 )
 
 ds_PE = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/energetics.nc",
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_5x_stretch/b_base/Ra1e7/512_64/PE.nc",
     "r"
 )
 
@@ -46,5 +46,5 @@ lines!(ax, time, BPE, linewidth=2, color=:deepskyblue3, label="⟨BPE⟩")
 
 Legend(fig[1,2], ax)
 
-save(joinpath(plot_dir, "Ra1e8_all_energies_smallerwindow.png"), fig)
-@info " saved Ra1e8_energy_plot"
+save(joinpath(plot_dir, "Ra1e7_5xgridstretch_energies.png"), fig)
+@info " saved Ra1e7 5x grid stretched energy plot"

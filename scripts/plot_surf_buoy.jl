@@ -2,7 +2,7 @@ using NCDatasets
 using CairoMakie
 using Printf
 
-output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_Ra1e8/1024_128/"
+output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_2x_stretch/"
 buoy_file = joinpath(output_dir, "buoyancy.nc")
 
 ds_b = NCDataset(buoy_file, "r")

@@ -4,7 +4,7 @@ using NCDatasets
 using Statistics
 using Printf
 
-output_dir =  "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/chebytest/b_base/Ra1e6/256_32/"
+output_dir =  "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e7/512_64/"
 
 buoy_file = joinpath(output_dir, "buoyancy.nc")
 #oc_file = joinpath(output_dir, "oceanostics.nc")
@@ -28,6 +28,7 @@ z = ds_b["z_aac"][:]
 time = ds_b["time"][:]
 
 println("size of b data : ", size(b))
+println("final time : ", time[end])
 
 Δx = ds_b["Δx_caa"][:]
 Δz = ds_b["Δz_aac"][:]
@@ -43,11 +44,11 @@ mkpath(plot_dir)
 
 println("creating plot 1: buoyancy heatmap with grid visualization")
 
-n = 40
-t = round(time[40])
+n = 100
+t = round(time[100])
 
 fig = Figure(size=(1000,600))
-ax = Axis(fig[1,1], xlabel = "x", ylabel="z", title = "Ra=1e6 experiment : buoyancy heatmap for variable grid at time $t")
+ax = Axis(fig[1,1], xlabel = "x", ylabel="z", title = "Ra=1e7 experiment : buoyancy heatmap for variable grid at time $t")
 
 hm = heatmap!(ax, x, z, b[:, 8, :, n])
 Colorbar(fig[1,2], hm)
@@ -60,7 +61,7 @@ for j in z[1:5:end]
     hlines!(ax, z, color=:white, alpha=0.3, linewidth=0.5)
 end
 
-save(joinpath(plot_dir, "b_hm_chebygrid.png"), fig)
+save(joinpath(plot_dir, "b_hm_8x_chebygrid.png"), fig)
 println("saved first figure")
 
 
@@ -69,16 +70,16 @@ println("making second figure : grid spacing size as function of index")
 fig2 = Figure(size = (1000, 600))
 
 ax1 = Axis(fig2[1,1], 
-            xlabel = "grid index i", ylabel = "Δx", title="x-spacing")
+            xlabel = "grid index i", ylabel = "Δx", title="x-spacing for 8x cheby grid")
 
 ax2 = Axis(fig2[1,2], 
-           xlabel = "grid index k", ylabel = "Δz", title="z-spacing" 
+           xlabel = "grid index k", ylabel = "Δz", title="z-spacing for 8x cheby grid" 
 )
 
 lines!(ax1, 1:length(Δx), Δx)
 lines!(ax2, 1:length(Δz), Δz)
 
-save(joinpath(plot_dir, "xz_chebyspacing.png"), fig2)
+save(joinpath(plot_dir, "xz_8x_chebyspacing.png"), fig2)
 
 println("saved second figure")
 

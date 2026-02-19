@@ -6,17 +6,17 @@ using NaNStatistics
 using NCDatasets
 
 ds = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/buoyancy.nc",
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e7/512_64/buoyancy.nc",
     "r"
 )
 
 ds_v = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/velocities.nc", 
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e7/512_64/velocities.nc", 
     "r"
 )
 
 ds_o = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/oceanostics.nc", 
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e7/512_64/oceanostics.nc", 
     "r"
 )
 
@@ -89,11 +89,14 @@ w_prime = zeros(Float32, Nx, Ny, Nz)
 
 #definitions for moving box average 
 
-Δt = time[5] - time[1]
+Δt = time[90] - time[1]
 Nt_window = round(Int, Δt)
 
+println("length of time", length(time))
+println("last time:", time[end])
+
 println("time 1 is", time[1])
-println("time 5 is", time[5])
+println("time 100 is", time[100])
 
 println(Nt_window)
 
@@ -186,12 +189,12 @@ lines!(ax, time[1:Nt], MKE_t .+ TKE_t, linewidth=2, linestyle=:dash, color=:red,
 lines!(ax, time[1:Nt], KE_t, linewidth=2, linestyle=:dash, color=:black, label="⟨KE⟩")
 Legend(fig[1,2], ax)
 
-save(joinpath(plot_dir, "Ra1e8_KE_plot_timewindow.png"), fig)
-@info " saved Ra1e8_KE_plot"
+save(joinpath(plot_dir, "Ra1e7_8xgridstretch_KE_plot.png"), fig)
+@info " saved Ra1e7 8x grid stretch KE plot"
 
 
-output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/"
-output_file = joinpath(output_dir, "kinetic_energetics_smallerwindow.nc")
+output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e7/512_64/"
+output_file = joinpath(output_dir, "KE.nc")
 
 @info "saving energetics to $output_file"
 
@@ -336,7 +339,7 @@ Colorbar(fig2[2,2], hm2)
 stride = 50
 frames = 1:stride:Nt   # or 1:5:Nt to subsample
 
-output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/Ra1e8_energetics_smallerwindow.mp4"
+output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/Ra1e7_8xgrid_MKE_TKE.mp4"
 
 record(fig2, output_file, frames; framerate = 8) do i
     frame[] = i

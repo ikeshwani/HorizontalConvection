@@ -1,38 +1,32 @@
-println(">>> STARTING JULIA SCRIPT <<<")
+println(">>> starting run case 1 : 5x stretching <<<")
 
-println("julia version", VERSION)
-
-# println("importing CUDA")
-# using CUDA
-# @info "CUDA functional?" CUDA.functional()
-# CUDA.versioninfo()
-
-println("import Oceananigans and Simulation Package")
+using CUDA
 using Oceananigans
-using TopographicHorizontalConvection:HorizontalConvectionSimulation_TEST
+using TopographicHorizontalConvection:HorizontalConvectionSimulation
 
-println("packages imported successfully")
-
-simulation = HorizontalConvectionSimulation_TEST(;
+simulation = HorizontalConvectionSimulation(;
                    #domain parameters
-    Nx = 256, 
-    Ny = 16,
-    Nz = 32, 
+    Nx = 512, 
+    Ny = 32,
+    Nz = 64, 
     H = 1.0, 
     α = 8.0,
+    x_stretch = 0.54,   # 5x stretch
+    z_stretch = 0.75,   # 5x stretch 
+    stop_time = 10.0,
 
     #topography parameters
     h₀_frac = 0.6, 
     numhill = 1, 
 
     #physics parameters
-    Ra = 1e6,
+    Ra = 1e9,
     Pr = 1.0, 
     b★ = 1.0, 
     advection = true, 
 
     #initial conditions
-    b_init = -0.5,
+    b_init = 0.0,
 
     #buoyancy forcing parameters
     winter_amplitude = 0.0,
@@ -58,11 +52,11 @@ simulation = HorizontalConvectionSimulation_TEST(;
     SO_westerlies_width = 10.0,
 
     #output parameters
-    output_writer = false,
-    output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/test/Ra1e6",
+    output_writer = true,
+    output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_5x_stretch/b_base/Ra1e9/",
 
     #computational parameters
-    architecture = CPU()
+    architecture = GPU()
     )
 
 run!(simulation, pickup=false)

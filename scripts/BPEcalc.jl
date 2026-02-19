@@ -6,7 +6,7 @@ using Printf
 using Interpolations
 
 ds = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/buoyancy.nc",
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_5x_stretch/b_base/Ra1e7/512_64/buoyancy.nc",
     "r"
 )
 
@@ -148,8 +148,8 @@ println("size of BPE is: ", size(BPE))
 
 #save data to netcdf so I can plot with the KE stuff
 
-output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/bss_eq_Ra1e8/512_64/"
-output_file = joinpath(output_dir, "energetics.nc")
+output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_5x_stretch/b_base/Ra1e7/512_64/"
+output_file = joinpath(output_dir, "PE.nc")
 
 @info "saving energetics to $output_file"
 
@@ -209,7 +209,7 @@ lines!(ax, time[1:Nt], BPE, label="⟨BPE⟩", linewidth=2, color=:blue)
 lines!(ax, time[1:Nt], APE, label="⟨APE⟩", linewidth=2, color=:green)
 
 
-save(joinpath(plot_dir, "Ra1e8_PE_APE_BPE.png"), fig)
-@info " saved Ra1e8_BPE_plot"
+save(joinpath(plot_dir, "Ra1e7_5xgrid_PE.png"), fig)
+@info " saved Ra1e7 5x grid stretch PE plot"
 
 close(ds)

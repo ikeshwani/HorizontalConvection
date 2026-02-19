@@ -4,12 +4,12 @@ using CairoMakie
 using Observables
 
 ds = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/b_winteronly/Ra1e6/320_40/buoyancy.nc",
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e7/512_64/buoyancy.nc",
     "r"
 )
 
 ds_v = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/b_winteronly/Ra1e6/320_40/velocities.nc", 
+    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e7/512_64/velocities.nc", 
     "r"
 )
 
@@ -54,9 +54,9 @@ bₙ = @lift begin
 end
 
 Uₙ = @lift begin
-    u_slice = Array(u[1:320, yidx, 1:40, $n])
-    v_slice = Array(v[1:320, yidx, 1:40, $n])
-    w_slice = Array(w[1:320, yidx, 1:40, $n])
+    u_slice = Array(u[1:512, yidx, 1:64, $n])
+    v_slice = Array(v[1:512, yidx, 1:64, $n])
+    w_slice = Array(w[1:512, yidx, 1:64, $n])
     sqrt.(u_slice.^2 .+ v_slice.^2 .+ w_slice.^2)
 end
 
@@ -93,7 +93,7 @@ ax_v = Axis(
     titlesize = 20
 )
 
-B_lims = (-0.7, 1.0)
+B_lims = (-1.0, 1.0)
 
 hm = heatmap!(
     ax_b, x, z, bₙ;
@@ -123,9 +123,9 @@ Colorbar(fig[2, 2], hm_u)
 
 frames = 1:Nt   # or 1:5:Nt to subsample
 
-output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/b_winteronly.mp4"
+output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/bbase_vel_8x_cheb.mp4"
 
-record(fig2, output_file, frames; framerate = 8) do i
+record(fig, output_file, frames; framerate = 16) do i
     n[] = i
 end
 

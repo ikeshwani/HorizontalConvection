@@ -53,12 +53,14 @@ struct DomainConfig
     Nx::Int
     Ny::Int
     Nz::Int
+    x_stretch::Float64
+    z_stretch::Float64
 end
 
-function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 1, Nz = 32)
+function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 1, Nz = 32, x_stretch=0.24, z_stretch=0.41)
     Lx = α * H
     Ly = H/2
-    return DomainConfig(H, Lx, Ly, Nx, Ny, Nz)
+    return DomainConfig(H, Lx, Ly, Nx, Ny, Nz, x_stretch, z_stretch)
 end
 
 
@@ -452,14 +454,13 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
     """
     H, Lx, Ly = domain.H, domain.Lx, domain.Ly
     Nx, Ny, Nz = domain.Nx, domain.Ny, domain.Nz
+    x_stretch, z_stretch = domain.x_stretch, domain.z_stretch
 
     """
     add chebychev grid spacing at for x and z axes
         specifically at the left boundary in x 
         top and bottom in z
     """ 
-    x_stretch = 0.54
-    z_stretch = 0.75
 
     function left_refined_x_faces(i)
         ξ = (i - 1) / Nx 
@@ -705,7 +706,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     # buoyancy output
     simulation.output_writers[:buoyancy] = NetCDFWriter(
-        model, (; b, chi=χ, ∫ϕz = bw);
+        model, (; b, chi=χ, ϕz = bw);
         filename = joinpath(project_dir, "buoyancy.nc"), 
         schedule = TimeInterval(time_interval), 
         with_halos = false, 
@@ -808,6 +809,9 @@ function HorizontalConvectionSimulation(;
     Nz = 32, 
     H = 1.0, 
     α = 8.0,
+    x_stretch = 0.24,
+    z_stretch = 0.41,
+    stop_time = 10.0,
 
     #topography parameters
     h₀_frac = 0.6, 
@@ -854,7 +858,7 @@ function HorizontalConvectionSimulation(;
 )
 
     # step 1. construct domain using DomainConfig
-    domain = DomainConfig(H=H, α=α, Nx=Nx, Ny=Ny, Nz=Nz)
+    domain = DomainConfig(H=H, α=α, Nx=Nx, Ny=Ny, Nz=Nz, x_stretch=x_stretch, z_stretch=z_stretch)
 
     # step 2. construct seafloor using make_seafloor
     seafloor = make_seafloor(domain, h₀_frac, numhill)
@@ -964,7 +968,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = 500.0)
+    simulation = Simulation(model, Δt = Δt, stop_time = stop_time)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     #step 11. add timestepper

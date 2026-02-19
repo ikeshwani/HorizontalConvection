@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#SBATCH --job-name="horizontal-convection-test"             ## Name of the job.
-#SBATCH --output="output_message/HC_test.%j.out"             ##output file
+#SBATCH --job-name="hc-ra1e10-2x"             ## Name of the job.
+#SBATCH --output="output_message/HC_2xcheb_ra10.%j.out"             ##output file
 #SBATCH --partition=gpuA40x4
 #SBATCH --mem=36G
 #SBATCH --nodes=1                 ## (-N) number of nodes to use
