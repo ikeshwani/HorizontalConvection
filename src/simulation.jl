@@ -57,9 +57,9 @@ struct DomainConfig
     z_stretch::Float64
 end
 
-function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 1, Nz = 32, x_stretch=0.24, z_stretch=0.41)
+function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 256, Nz = 32, x_stretch=0.24, z_stretch=0.41)
     Lx = α * H
-    Ly = H/2
+    Ly = Lx #for chapter one configuration set Ly=Lx
     return DomainConfig(H, Lx, Ly, Nx, Ny, Nz, x_stretch, z_stretch)
 end
 
@@ -445,9 +445,12 @@ end
 
 # Construct the grid
 
-function make_grid(domain::DomainConfig, seafloor_function, architecture)
+function make_grid(domain::DomainConfig, seafloor_function, architecture, numhill)
     """
-    Constructs the conputational grid with immersed boundary
+    Constructs the conputational grid with OR WITHOUT immersed boundary
+    if numhil == 0 (flat bottom), uses regular RectilinearGrid
+    otherwise uses ImmersedBoundaryGrid with seafloor
+
     GPU-compatible !!!!!!!! (hopefully)
     I learned from the testing that I have to pre-compute the seafloor on CPU
     then transfer to GPU
@@ -462,12 +465,12 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         top and bottom in z
     """ 
 
-    function left_refined_x_faces(i)
+    function left_refined_x_PL(i)
         ξ = (i - 1) / Nx 
 
-        β = 3.0 * x_stretch
-        if β > 0.01 
-            stretched = (exp(β * ξ) - 1) / (exp(β) - 1)
+        if x_stretch > 0.01
+            exponent = 1.0 + 1.95 * x_stretch
+            stretched = ξ^exponent
         else
             stretched = ξ
         end
@@ -475,25 +478,75 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         return -Lx/2 + Lx * stretched
     end
 
-    function z_chebychev_grid(k)
-        ξ = (k - 1) / Nz 
-        cheby = 0.5 * (1 - cos(π * ξ))
-        uniform = ξ
+    #modified z stretch so its only on the top
 
-        stretched = (1 - z_stretch) * uniform + z_stretch * cheby
+    function top_refined_z_PL(k)
+        ξ = (k - 1) / Nz
+        if z_stretch > 0.01
+            exponent = 1.0 / (1.0 + 0.15 * z_stretch)
+            stretched = ξ^exponent
+        else
+            stretched = ξ
+        end
 
-        #map to domain [-H, 0]
-        return -H + H * stretched 
+        return -H + H * stretched
     end
 
-    if Ny  == 1
-        #2D Grid with y dimension flat
+    # function left_refined_x_faces(i)
+    #     ξ = (i - 1) / Nx 
 
+    #     β = 3.0 * x_stretch
+    #     if β > 0.01 
+    #         stretched = (exp(β * ξ) - 1) / (exp(β) - 1)
+    #     else
+    #         stretched = ξ
+    #     end
+
+    #     return -Lx/2 + Lx * stretched
+    # end
+
+    # function z_chebychev_grid(k)
+    #     ξ = (k - 1) / Nz 
+    #     cheby = 0.5 * (1 - cos(π * ξ))
+    #     uniform = ξ
+
+    #     stretched = (1 - z_stretch) * uniform + z_stretch * cheby
+
+    #     #map to domain [-H, 0]
+    #     return -H + H * stretched 
+    # end
+
+    if numhill == 0
+        if Ny == 1
+            return RectilinearGrid(
+                architecture, 
+                size = (Nx, Nz), 
+                x = left_refined_x_PL, 
+                z = top_refined_z_PL, 
+                halo = (4, 4), 
+                topology = (Bounded, Flat, Bounded)
+            )
+        else
+            return RectilinearGrid(
+                architecture, 
+                size = (Nx, Ny, Nz), 
+                x = left_refined_x_PL, 
+                y = (-Ly/2, Ly/2), 
+                z = top_refined_z_PL, 
+                halo = (4, 4, 4), 
+                topology = (Bounded, Periodic, Bounded)
+            )
+        end
+    end
+
+    ### otherwise , create immersed boundary grid with seafloor
+
+    if Ny  == 1
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Nz), 
-            x = left_refined_x_faces, 
-            z = z_chebychev_grid,
+            x = left_refined_x_PL, 
+            z = top_refined_z_PL,
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -508,8 +561,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Nz), 
-            x = left_refined_x_faces, 
-            z = z_chebychev_grid, 
+            x = left_refined_x_PL, 
+            z = top_refined_z_PL, 
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -521,37 +574,17 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
        
     else
         #3D Grid with y dimension Periodic
-
         #Create the CPU grid for computing coords
 
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Ny, Nz), 
-            x = left_refined_x_faces, 
+            x = left_refined_x_PL, 
             y = (-Ly/2, Ly/2), 
-            z = z_chebychev_grid, 
+            z = top_refined_z_PL, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
-
-        # #### DEBUGGING OUTPUT Δx and Δz 
-
-        # #x_faces = xnodes(cpu_grid, Face())
-        # #z_faces = znodes(cpu_grid, Face())
-
-        # Δx = xspacings(cpu_grid, Center())
-        # Δz = zspacings(cpu_grid, Center())
-
-        # println("grid spacing diagnostics: ")
-        # println("min Δx = ", minimum(Δx))
-        # println("max Δx = ", maximum(Δx))
-        # println("ratio Δx = ", maximum(Δx) / minimum(Δx))
-
-        # println("min Δz = ", minimum(Δz))
-        # println("max Δz = ", maximum(Δz))
-        # println("ratio Δz = ", maximum(Δz) / minimum(Δz))
-
-        # println( "-------------------------")
 
         seafloor_heights = zeros(Nx, Ny)
         for i in 1:Nx , j in 1:Ny
@@ -564,9 +597,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture)
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Ny, Nz),
-            x = left_refined_x_faces, 
+            x = left_refined_x_PL, 
             y = (-Ly/2, Ly/2), 
-            z = z_chebychev_grid, 
+            z = top_refined_z_PL, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -605,7 +638,7 @@ function PhysicsParams(; Ra=1e11, Pr=1.0, b★=1.0, H=1.0, advection=true)
         advection_scheme = WENO()
         cfl = 0.5
     else
-        advection_scheme = nothing
+        advection_scheme = Centered(order=2)
         cfl = Inf
     end
 
@@ -698,7 +731,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     # checkpointer
     simulation.output_writers[:checkpointer] = Checkpointer(
         model, 
-        schedule = TimeInterval(200), 
+        schedule = TimeInterval(5), 
         dir = project_dir, 
         prefix = string(filename_prefix, "_checkpoint"),
         cleanup = true
@@ -864,10 +897,16 @@ function HorizontalConvectionSimulation(;
     seafloor = make_seafloor(domain, h₀_frac, numhill)
 
     #step 3. construct the grid using make_grid
-    grid = make_grid(domain, seafloor, architecture)
+    grid = make_grid(domain, seafloor, architecture, numhill)
 
-    @info "grid created : left refinement with x_stretch = 0.54 and
-             top and bottom refinement with z_stretch = 0.75"
+    if numhill == 0
+        @info "grid created : flat bottom (no immersed boundary)
+                            left refinement with x_stretch = $x_stretch and top refinement with z_stretch = $z_stretch"
+
+    else
+        @info "grid created : immersed boundary with $(numhill) hill(s)
+                            left refinement with x_stretch = $x_stretch and top refinment with z_stretch = $z_stretch"
+    end
 
     #step 4. construct physics params using PhysicsParams
     physics = PhysicsParams(Ra=Ra, Pr=Pr, b★=b★, H=H, advection=advection)
@@ -940,28 +979,77 @@ function HorizontalConvectionSimulation(;
 
     # step 8. construct the model 
 
-    pressure_solver = ConjugateGradientPoissonSolver(grid)
+    # use ConjugateGradientPoissonSolver only for immersed boundary Grids
+    # for regular grid use the default pressure Solvers
 
-    model = NonhydrostaticModel(
-        grid = grid, 
-        advection = physics.advection_scheme, 
-        timestepper = :RungeKutta3, 
-        tracers = :b, 
-        buoyancy = BuoyancyTracer(), 
-        coriolis = coriolis_obj,
-        closure = ScalarDiffusivity(; physics.ν, physics.κ), 
-        hydrostatic_pressure_anomaly = CenterField(grid), 
-        pressure_solver = pressure_solver, 
-        boundary_conditions = boundary_conditions
-    )
+    if numhill == 0
+        @info "Using default FFT-based pressure solver"
+        # no immersed boundary can use the fft based Solver
+
+        if coriolis_obj === nothing
+            model = NonhydrostaticModel(
+                grid = grid, 
+                advection = physics.advection_scheme, 
+                timestepper = :RungeKutta3, 
+                tracers = :b, 
+                buoyancy = BuoyancyTracer(),
+                closure = ScalarDiffusivity(; physics.ν, physics.κ), 
+                hydrostatic_pressure_anomaly = CenterField(grid), 
+                boundary_conditions = boundary_conditions
+            )
+        else
+            model = NonhydrostaticModel(
+                grid = grid, 
+                advection = physics.advection_scheme, 
+                timestepper = :RungeKutta3, 
+                tracers = :b, 
+                buoyancy = BuoyancyTracer(), 
+                coriolis = coriolis_obj,
+                closure = ScalarDiffusivity(; physics.ν, physics.κ), 
+                hydrostatic_pressure_anomaly = CenterField(grid), 
+                boundary_conditions = boundary_conditions
+            )
+        end
+        
+    else
+        @info "using ConjugateGradient pressure solver for immersed boundary"
+        # immersed boundary --> need ConjugateGradientPoissonSolver
+
+        pressure_solver = ConjugateGradientPoissonSolver(grid)
+
+        if coriolis_obj === nothing
+            model = NonhydrostaticModel(
+                grid = grid, 
+                advection = physics.advection_scheme, 
+                timestepper = :RungeKutta3, 
+                tracers = :b, 
+                buoyancy = BuoyancyTracer(),
+                closure = ScalarDiffusivity(; physics.ν, physics.κ), 
+                hydrostatic_pressure_anomaly = CenterField(grid), 
+                pressure_solver = pressure_solver, 
+                boundary_conditions = boundary_conditions
+            )
+        else
+            model = NonhydrostaticModel(
+                grid = grid, 
+                advection = physics.advection_scheme, 
+                timestepper = :RungeKutta3, 
+                tracers = :b, 
+                buoyancy = BuoyancyTracer(), 
+                coriolis = coriolis_obj,
+                closure = ScalarDiffusivity(; physics.ν, physics.κ), 
+                hydrostatic_pressure_anomaly = CenterField(grid), 
+                pressure_solver = pressure_solver, 
+                boundary_conditions = boundary_conditions
+            )
+        end
+    end
 
     # step 9. set the initial conditions
     B₀ = make_initial_buoyancy(b_init, domain.Ny)
-    println("B₀ created: " , typeof(B₀))
     set!(model, b = B₀)
 
     # step 10. construct the simulation timescale and simulation
-
     τ_eq = sqrt(Ra)
     min_Δz = minimum_zspacing(grid)
     diffusive_time_scale = min_Δz^2 / physics.κ
@@ -971,16 +1059,43 @@ function HorizontalConvectionSimulation(;
     simulation = Simulation(model, Δt = Δt, stop_time = stop_time)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
+    # for a purely diffusive simulation, we add zero velocities call back to ensure pure diffusion
+
+    if !advection
+        function zero_velocities!(sim)
+            fill!(sim.model.velocities.u, 0)
+            fill!(sim.model.velocities.v, 0)
+            fill(sim.model.velocities.w, 0)
+        end
+        simulation.callbacks[:zero_velocities] = Callback(zero_velocities!, IterationInterval(1))
+    end
+
     #step 11. add timestepper
 
     wizard = TimeStepWizard(cfl = physics.cfl, diffusive_cfl = 0.2)
     simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(50))
 
+    # progress(sim) = begin
+    #     @printf("i: % 6d, sim time: % 1.3f, wall_time: % 10s, Δt: % 1.4f, advective CFL: %.2e, diffusive CFL: %.2e\n",
+    #         iteration(sim), time(sim), prettytime(sim.run_wall_time), 
+    #         sim.Δt, AdvectiveCFL(sim.Δt)(sim.model), DiffusiveCFL(sim.Δt)(sim.model)
+    # )flush(stdout)
+    # end
+
     progress(sim) = begin
-    
-    @printf("i: % 6d, sim time: % 1.3f, wall_time: % 10s, Δt: % 1.4f, advective CFL: %.2e, diffusive CFL: %.2e\n",
-        iteration(sim), time(sim), prettytime(sim.run_wall_time), 
-        sim.Δt, AdvectiveCFL(sim.Δt)(sim.model), DiffusiveCFL(sim.Δt)(sim.model)
+    adv_cfl = AdvectiveCFL(sim.Δt)(sim.model)
+    diff_cfl = DiffusiveCFL(sim.Δt)(sim.model)
+
+    adv_cfl  = adv_cfl  === nothing ? 0.0 : adv_cfl
+    diff_cfl = diff_cfl === nothing ? 0.0 : diff_cfl
+
+    @printf("i: %6d, sim time: %1.3f, wall_time: %10s, Δt: %1.4f, advective CFL: %.2e, diffusive CFL: %.2e\n",
+        iteration(sim),
+        time(sim),
+        prettytime(sim.run_wall_time),
+        sim.Δt,
+        adv_cfl,
+        diff_cfl
     )
 
     flush(stdout)

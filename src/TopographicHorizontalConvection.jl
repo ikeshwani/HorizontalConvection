@@ -1,7 +1,7 @@
 module TopographicHorizontalConvection
     include("simulation.jl")
     #include("simulation_test.jl")
-    #include("SIM_GPU_TEST.jl")
+    include("SIM_GPU_TEST.jl")
     include("analysis.jl")
     include("grid_testing.jl")
     include("RANS_energies.jl")
