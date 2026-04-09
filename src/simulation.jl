@@ -59,7 +59,7 @@ end
 
 function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 256, Nz = 32, x_stretch=0.24, z_stretch=0.41)
     Lx = α * H
-    Ly = Lx #for chapter one configuration set Ly=Lx
+    Ly = Lx/2 #chapter one configuration
     return DomainConfig(H, Lx, Ly, Nx, Ny, Nz, x_stretch, z_stretch)
 end
 
@@ -443,6 +443,7 @@ function make_wind_stress(wind::WindForcing, domain::DomainConfig)
     return v_bcs
 end
 
+
 # Construct the grid
 
 function make_grid(domain::DomainConfig, seafloor_function, architecture, numhill)
@@ -465,14 +466,16 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
         top and bottom in z
     """ 
 
-    function left_refined_x_PL(i)
-        ξ = (i - 1) / Nx 
+    # x refined function is pulled out of make grid so lets call it
 
-        if x_stretch > 0.01
-            exponent = 1.0 + 1.95 * x_stretch
-            stretched = ξ^exponent
-        else
+    function x_refined_grid(i, rx = x_stretch, Lx=Lx, Nx=Nx)
+        ξ = (i - 1) / Nx
+        β = log(rx) # sets the ratio Δx_max / Δx_min = r
+
+        if rx == 1.0
             stretched = ξ
+        else
+            stretched = (exp(β*ξ) - 1) / (exp(β) -1)
         end
 
         return -Lx/2 + Lx * stretched
@@ -480,13 +483,14 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
 
     #modified z stretch so its only on the top
 
-    function top_refined_z_PL(k)
+    function z_refined_grid(k, rz = z_stretch, H=H, Nz=Nz)
         ξ = (k - 1) / Nz
-        if z_stretch > 0.01
-            exponent = 1.0 / (1.0 + 0.15 * z_stretch)
-            stretched = ξ^exponent
-        else
+        β = log(rz)
+
+        if rz == 1.0 #need this to avoid divide by 0 error
             stretched = ξ
+        else
+            stretched = (1 - exp(-β*ξ)) / (1 - exp(-β))
         end
 
         return -H + H * stretched
@@ -521,8 +525,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
             return RectilinearGrid(
                 architecture, 
                 size = (Nx, Nz), 
-                x = left_refined_x_PL, 
-                z = top_refined_z_PL, 
+                x = x_refined_grid, 
+                z = z_refined_grid, 
                 halo = (4, 4), 
                 topology = (Bounded, Flat, Bounded)
             )
@@ -530,9 +534,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
             return RectilinearGrid(
                 architecture, 
                 size = (Nx, Ny, Nz), 
-                x = left_refined_x_PL, 
+                x = x_refined_grid, 
                 y = (-Ly/2, Ly/2), 
-                z = top_refined_z_PL, 
+                z = z_refined_grid, 
                 halo = (4, 4, 4), 
                 topology = (Bounded, Periodic, Bounded)
             )
@@ -545,8 +549,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Nz), 
-            x = left_refined_x_PL, 
-            z = top_refined_z_PL,
+            x = x_refined_grid, 
+            z = z_refined_grid,
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -561,8 +565,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Nz), 
-            x = left_refined_x_PL, 
-            z = top_refined_z_PL, 
+            x = x_refined_grid, 
+            z = z_refined_grid, 
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -579,9 +583,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Ny, Nz), 
-            x = left_refined_x_PL, 
+            x = x_refined_grid, 
             y = (-Ly/2, Ly/2), 
-            z = top_refined_z_PL, 
+            z = z_refined_grid, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -597,9 +601,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Ny, Nz),
-            x = left_refined_x_PL, 
+            x = x_refined_grid, 
             y = (-Ly/2, Ly/2), 
-            z = top_refined_z_PL, 
+            z = z_refined_grid, 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -653,14 +657,14 @@ function make_initial_buoyancy(b_init, Ny::Int)
         the input b_init governs the coldstart 
     """
 
-    @inline function noise(x,z)
-        return 1e-6 * sin(2π * x) * sin(2π * z)
+    @inline function noise(x,y, z)
+        return 1e-4 * (randn() - 0.5)
     end
 
     if Ny == 1
-        return (x,z) -> b_init + noise(x,z)
+        return (x,z) -> b_init + noise(x, 0, z)
     else
-        return (x,y,z) -> b_init + noise(x,z)
+        return (x,y,z) -> b_init + noise(x, y, z)
     end
 end
 
@@ -677,7 +681,8 @@ function OutputConfig(; enabled=true, base_dir="/output", time_interval_fraction
 end
 
 function setup_output_writers!(simulation, domain, physics, forcing, 
-                                output_config, filename_prefix, numhill, h₀_frac, b_init)
+                                output_config, filename_prefix, numhill, h₀_frac, b_init, 
+                                segment::Int = 1)
     """
     This function configures the output writers for the simulation
     """
@@ -731,7 +736,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     # checkpointer
     simulation.output_writers[:checkpointer] = Checkpointer(
         model, 
-        schedule = TimeInterval(5), 
+        schedule = TimeInterval(1.0),
         dir = project_dir, 
         prefix = string(filename_prefix, "_checkpoint"),
         cleanup = true
@@ -740,7 +745,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     # buoyancy output
     simulation.output_writers[:buoyancy] = NetCDFWriter(
         model, (; b, chi=χ, ϕz = bw);
-        filename = joinpath(project_dir, "buoyancy.nc"), 
+        filename = joinpath(project_dir, "buoyancy_seg$(segment).nc"), 
         schedule = TimeInterval(time_interval), 
         with_halos = false, 
         global_attributes = global_attributes,
@@ -750,7 +755,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     # velocities output
     simulation.output_writers[:velocities] = NetCDFWriter(
         model, (; u, v, w);
-        filename = joinpath(project_dir, "velocities.nc"),
+        filename = joinpath(project_dir, "velocities_seg$(segment).nc"),
         schedule = TimeInterval(time_interval),
         with_halos = false, 
         global_attributes = global_attributes,
@@ -760,8 +765,8 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     #section section_snapshots
     simulation.output_writers[:section_snapshots] = NetCDFWriter(
         model, (; b, ke, pe);
-        filename = joinpath(project_dir, "section_snapshots.nc"),
-        schedule = TimeInterval(1), 
+        filename = joinpath(project_dir, "section_snapshots_seg$(segment).nc"),
+        schedule = TimeInterval(10), #make time interval bigger for long run
         indices = indices, 
         with_halos = false, 
         global_attributes = global_attributes, 
@@ -771,8 +776,8 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     # Zonal time means
     simulation.output_writers[:zonal_time_means] = NetCDFWriter(
         model, (; b=b_avg_y);
-        filename = joinpath(project_dir, "zonal_time_means.nc"),
-        schedule = AveragedTimeInterval(1, window=1),
+        filename = joinpath(project_dir, "zonal_time_means_seg$(segment).nc"),
+        schedule = AveragedTimeInterval(10, window=1), #make time interval larger for long run
         with_halos = false, 
         global_attributes = global_attributes, 
         overwrite_existing = true
@@ -781,8 +786,8 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     #oceanostics diagnostics 
     simulation.output_writers[:oceanostics] = NetCDFWriter(
         model, (; ke, ε, χ);
-        filename = joinpath(project_dir, "oceanostics.nc"), 
-        schedule = TimeInterval(time_interval), 
+        filename = joinpath(project_dir, "oceanostics_seg$(segment).nc"), 
+        schedule = TimeInterval(5), #make time interval larger for long
         indices = indices, 
         with_halos = false, 
         global_attributes = global_attributes, 
@@ -885,6 +890,7 @@ function HorizontalConvectionSimulation(;
     #output parameters
     output_writer = true, 
     output_dir = "../output/testing/",
+    segment = 1,
 
     #computational parameters
     architecture = CPU()
@@ -1056,7 +1062,7 @@ function HorizontalConvectionSimulation(;
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = stop_time)
+    simulation = Simulation(model, Δt = Δt, stop_time = stop_time + Δt * 10)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
     # for a purely diffusive simulation, we add zero velocities call back to ensure pure diffusion
@@ -1113,7 +1119,8 @@ function HorizontalConvectionSimulation(;
 
     setup_output_writers!(
         simulation, domain, physics, forcing, 
-        output_config, filename_prefix, numhill, h₀_frac, b_init
+        output_config, filename_prefix, numhill, h₀_frac, b_init, 
+        segment
     )
 
     return simulation

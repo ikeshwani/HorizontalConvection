@@ -289,7 +289,7 @@ function global_volume_integral(ds, var)
             dims=(1,2,3)
         )[1,1,1]
     end  
-    return var_array
+    return time, var_array
 end
 
 function compute_NU_from_diff(diff_ds, adv_ds)
