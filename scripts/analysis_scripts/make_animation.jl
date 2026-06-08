@@ -2,165 +2,107 @@ using Printf
 using NCDatasets
 using CairoMakie
 using Observables
-using JLD2
 
-# looking at checkpoint files and seeing the last time 
+basepath = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
+output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/GRC/Control/first167sec.mp4"
 
-# for f in [
-#     "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e10/4x_stretch/512_128/turbulentnothingnothing_summeronly_flat_0.0_Ra1.0e10_zerostart_checkpoint_iteration4038.jld2",
-#     "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e10/4x_stretch/512_128/turbulentnothingnothing_summeronly_flat_0.0_Ra1.0e10_zerostart_checkpoint_iteration4218.jld2",
-#     "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e10/4x_stretch/512_128/turbulentnothingnothing_summeronly_flat_0.0_Ra1.0e10_zerostart_checkpoint_iteration4426.jld2",
-#     "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e10/4x_stretch/512_128/turbulentnothingnothing_summeronly_flat_0.0_Ra1.0e10_zerostart_checkpoint_iteration4632.jld2", 
-#     "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e10/4x_stretch/512_128/turbulentnothingnothing_summeronly_flat_0.0_Ra1.0e10_zerostart_checkpoint_iteration4632.jld2"
-#           ]
+mkpath(dirname(output_file))
 
-#     jldopen(f, "r") do file
-#         clock = file["NonhydrostaticModel/clock"]
-#         println("t = ", clock.time)
-#     end
-# end
+datasets = [NCDataset(joinpath(basepath, "buoyancy_seg$(i).nc")) for i in 1:8]
 
+ds1 = datasets[1]
+Nx = ds1.attrib["Nx"]
+Ny = ds1.attrib["Ny"]
+Nz = ds1.attrib["Nz"]
+Lx = ds1.attrib["Lx"]
+Ly = ds1.attrib["Ly"]
+H  = ds1.attrib["H"]
+Ra = ds1.attrib["Ra"]
+x  = ds1["x_caa"][:]
+y  = ds1["y_aca"][:]
+z  = ds1["z_aac"][:]
 
-ds = NCDataset(
-    "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e10/4x_stretch/512_128/buoyancy_combined.nc",
-    "r"
-)
+# Build global frame index removing overlapping timesteps between segments
+frame_index = Tuple{Int,Int}[]
+t_global    = Float64[]
 
-# # ds_v = NCDataset(
-# #     "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/4x_stretch/512_128/velocities.nc", 
-# #     "r"
-# # )
+let t_end_prev = -Inf
+    for seg in 1:8
+        t_seg     = datasets[seg]["time"][:]
+        new_start = findfirst(t -> t > t_end_prev, t_seg)
+        new_start === nothing && continue
+        for k in new_start:length(t_seg)
+            push!(frame_index, (seg, k))
+            push!(t_global, t_seg[k])
+        end
+        t_end_prev = t_global[end]
+    end
+end
 
-b = ds["b"]                # DO NOT slice here
-# # u = ds_v["u"]
-# # v = ds_v["v"]
-# # w = ds_v["w"]
-# time = ds["time"][:]
-# print(time[1], time[end])
+Nt = length(t_global)
+@info "Total frames: $Nt,  t ∈ [$(t_global[1]), $(t_global[end])]"
 
-x = ds["x_caa"][:]
-y = ds["y_aca"][:]
-z = ds["z_aac"][:]
+yidx = Ny ÷ 2   # mid-y slice for x-z plane
+xidx = 1         # leftmost x slice for y-z plane (cold plume entry)
 
-# #Metadata
+# Wet mask from seg1 time index 2 — avoids cold-start zeros misidentifying dry cells
+b_ref_xz = Array(datasets[1]["b"][:, yidx, :, 2])
+b_ref_yz = Array(datasets[1]["b"][xidx, :, :, 2])
 
-Ra = ds.attrib["Ra"]
-H  = ds.attrib["H"]
-Lx = ds.attrib["Lx"]
-Ly = ds.attrib["Ly"]
-Nx = ds.attrib["Nx"]
-Ny = ds.attrib["Ny"]
+hill_xz        = fill(NaN, Nx, Nz)
+hill_xz[b_ref_xz .== 0.0] .= 1.0
 
-Nt = length(time)
-yidx = Int(Ny ÷ 2)
-xidx = Int(1) #we want the b(y,z) to be sliced at the left x boundary 
-
-@info "Creating animation for Ra = $Ra with $Nt frames"
+hill_yz        = fill(NaN, Ny, Nz)
+hill_yz[b_ref_yz .== 0.0] .= 1.0
 
 n = Observable(1)
 
-title_bxz = @lift @sprintf(
-    "buoyancy on x-z plane [m/s²], Ra = %.2e, t = %.2f",
-    Ra, time[$n]
-)
+title_xz = @lift @sprintf("buoyancy x-z plane  Ra = %.2e  t = %.2f", Ra, t_global[$n])
+title_yz = @lift @sprintf("buoyancy y-z plane  Ra = %.2e  t = %.2f", Ra, t_global[$n])
 
-title_byz = @lift @sprintf(
-    "buoyancy on y-z plane [m/s²], Ra = %.2e, t = %.2f", 
-    Ra, time[$n]
-)
-
-# Lazy read: one (x,z) slice at one time index
 b_xzₙ = @lift begin
-    Array(b[:, yidx, :, $n])
+    seg, k = frame_index[$n]
+    Array(datasets[seg]["b"][:, yidx, :, k])
 end
 
 b_yzₙ = @lift begin
-    Array(b[xidx, :, :, $n])
+    seg, k = frame_index[$n]
+    Array(datasets[seg]["b"][xidx, :, :, k])
 end
 
-# # Uₙ = @lift begin
-# #     u_slice = Array(u[1:512, yidx, 1:64, $n])
-# #     v_slice = Array(v[1:512, yidx, 1:64, $n])
-# #     w_slice = Array(w[1:512, yidx, 1:64, $n])
-# #     sqrt.(u_slice.^2 .+ v_slice.^2 .+ w_slice.^2)
-# # end
-
-# #the size of Uₙ is Nx, Nz
-
-# #velocity magnitude
-
-b_ref = Array(b[:, yidx, :, 2]) #im using any time index that is not the initial in case theres no cold start
-
-b_ref_yz = Array(b[xidx, :, :, 2]) #second ref for yz plane example
-wet_xz = b_ref .!= 0.0  # bool array : true = fluid, false = hills # size = Nx, Nz
-wet_yz = b_ref_yz .!= 0.0 #bool array : true = fluid, false = hiills # size = Ny, Nz
-
-# println("size of wet mask", size(wet_xz))
-
-wet_masked_xz = Float64.(copy(wet_xz))
-wet_masked_xz[wet_xz] .= NaN
-
-wet_masked_yz = Float64.(copy(wet_yz))
-wet_masked_yz[wet_yz] .= NaN
+B_lims = (-0.5, 0.5)
 
 fig = Figure(size = (800, 1200))
 
-ax_bxz = Axis(
-    fig[1, 1];
-    title = title_bxz,
-    xlabel = L"x / Lx",
-    ylabel = L"z / H",
-    limits = ((-Lx/2, Lx/2), (-H, 0)),
-    aspect = Lx / H,
+ax_xz = Axis(fig[1, 1];
+    title     = title_xz,
+    xlabel    = L"x",
+    ylabel    = L"z",
+    limits    = ((-Lx/2, Lx/2), (-H, 0)),
+    aspect    = Lx / H,
     titlesize = 20
 )
 
-ax_byz = Axis(
-    fig[2, 1];
-    title = title_byz, 
-    xlabel = L"y / Ly",
-    ylabel = L"z / H",
-    limits = ((-Lx/2, Lx/2), (-H, 0)),
-    aspect = Lx / H,
+ax_yz = Axis(fig[2, 1];
+    title     = title_yz,
+    xlabel    = L"y",
+    ylabel    = L"z",
+    limits    = ((-Ly/2, Ly/2), (-H, 0)),
+    aspect    = Ly / H,
     titlesize = 20
 )
 
-B_lims = (-1.0, 1.0)
+hm1 = heatmap!(ax_xz, x, z, b_xzₙ; colormap = :balance, colorrange = B_lims)
+heatmap!(ax_xz, x, z, hill_xz; colormap = :turbid)
+Colorbar(fig[1, 2], hm1)
 
-hm_1 = heatmap!(
-    ax_bxz, x, z, b_xzₙ;
-    colormap = :balance,
-    colorrange = B_lims
-)
+hm2 = heatmap!(ax_yz, y, z, b_yzₙ; colormap = :balance, colorrange = B_lims)
+heatmap!(ax_yz, y, z, hill_yz; colormap = :turbid)
+Colorbar(fig[2, 2], hm2)
 
-hm_hill = heatmap!(
-    ax_bxz, x, z, wet_masked_xz[:, :], colormap=:turbid
-)
-
-Colorbar(fig[1, 2], hm_1)
-
-# U_lims = (0.0, 0.4)
-
-hm_2 = heatmap!(
-    ax_byz, y, z, b_yzₙ;
-    colormap = :balance, 
-    colorrange = B_lims, 
-)
-
-hm_hill = heatmap!(
-    ax_byz, y, z, wet_masked_yz[:, :], colormap=:turbid
-)
-
-Colorbar(fig[2, 2], hm_2)
-
-frames = 1:Nt   # or 1:5:Nt to subsample
-
-output_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/animations/GPU/chapter1/RA1e10/4x_stretch/first28sec.mp4"
-
-record(fig, output_file, frames; framerate = 16) do i
+record(fig, output_file, 1:Nt; framerate = 24) do i
     n[] = i
 end
 
-close(ds)
-
+foreach(close, datasets)
 @info "Animation saved to $output_file"

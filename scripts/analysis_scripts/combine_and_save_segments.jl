@@ -1,19 +1,26 @@
 using NCDatasets
 using Printf
 
-using NCDatasets
-using Printf
-
 function combine_and_save()
     basepath = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
-    outfile = joinpath(basepath, "combined_t194.nc")
 
-    n_segs = collect(8:10)
+    outfile = joinpath(basepath, "combined_t385.nc")
+
+    n_segs = collect(12:17)
     n_segments = length(n_segs)  # = 3
 
-    ds_combined = NCDataset(joinpath(basepath, "combined_t125.nc"))
+    ds_combined = NCDataset(joinpath(basepath, "combined_t194.nc"))
     datasets = [NCDataset(joinpath(basepath, "buoyancy_seg$(i).nc")) for i in n_segs]
     u_data   = [NCDataset(joinpath(basepath, "velocities_seg$(i).nc")) for i in n_segs]
+
+    for (local_i, seg) in enumerate(n_segs)
+        println(
+            "seg $seg : ",
+            size(datasets[local_i]["b"]),
+            "  nt = ",
+            length(datasets[local_i]["time"])
+        )
+    end
 
     # Grid info from the first new segment (or from ds_combined — same grid)
     ds1 = datasets[1]
