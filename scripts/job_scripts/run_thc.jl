@@ -1,4 +1,4 @@
-println(">>> starting run case 1 : 2x stretching <<<")
+println(">>> Running Ra1e6 4x stretching simulation to equilibrium >>> ")
 
 using CUDA
 using Oceananigans
@@ -7,20 +7,20 @@ using TopographicHorizontalConvection:HorizontalConvectionSimulation
 simulation = HorizontalConvectionSimulation(;
                    #domain parameters
     Nx = 512, 
-    Ny = 32,
-    Nz = 64, 
+    Ny = 256,
+    Nz = 128, 
     H = 1.0, 
-    α = 8.0,
-    x_stretch = 0.24,   #2x stretch
-    z_stretch = 0.41,   #2x stretch
-    stop_time = 1.0,
+    α = 4.0,
+    x_stretch = 4.0,   #4x stretch
+    z_stretch = 4.0,   #4x stretch
+    stop_time = 50.0,
 
     #topography parameters
-    h₀_frac = 0.6, 
-    numhill = 1, 
+    h₀_frac = 0.0, 
+    numhill = 0, 
 
     #physics parameters
-    Ra = 1e9,
+    Ra = 1e6,
     Pr = 1.0, 
     b★ = 1.0, 
     advection = true, 
@@ -52,12 +52,17 @@ simulation = HorizontalConvectionSimulation(;
     SO_westerlies_width = 10.0,
 
     #output parameters
-    output_writer = false,
-    output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_2x_stretch/b_base/Ra1e10/",
+    output_writer = true,
+    output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e6/4x_stretch/",
+    segment = 1, 
 
     #computational parameters
     architecture = GPU()
     )
 
-run!(simulation, pickup=false)
+# in your Julia code before run!
+# Base.catch_signal(Base.SIGUSR1) do
+#     write_output!(simulation.output_writers[:checkpointer], simulation.model)
+# end
 
+run!(simulation, pickup=false)

@@ -15,7 +15,6 @@
 const Ω = 7.292115e-5 # earth's rotation rate in s⁻¹
 const R = 6.371e6 # earth's radius in m
 
-using NCDatasets
 using Oceananigans
 using Printf
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -53,14 +52,12 @@ struct DomainConfig
     Nx::Int
     Ny::Int
     Nz::Int
-    x_stretch::Float64
-    z_stretch::Float64
 end
 
-function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 256, Nz = 32, x_stretch=0.24, z_stretch=0.41)
+function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 1, Nz = 32)
     Lx = α * H
-    Ly = Lx/2 #chapter one configuration
-    return DomainConfig(H, Lx, Ly, Nx, Ny, Nz, x_stretch, z_stretch)
+    Ly = H/2
+    return DomainConfig(H, Lx, Ly, Nx, Ny, Nz)
 end
 
 
@@ -186,11 +183,6 @@ end
     # f is the spatial structure of the function that represents anomaly from base
     f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
 
-    # if no seasonal forcing , skip the cosine (so there's no infinity error)
-    if p.seasonal_period == 0.0
-        return p.b★ * b_BASE
-    end
-
     # S(t) is the seasonal clock: S<0 represents winter, S>0 represents summer
     S = cos(2π * t / p.seasonal_period)
 
@@ -207,16 +199,11 @@ end
 
 
 @inline function surface_buoyancy_3d(x, y, t, p)
-	# base spatial profile goes from -1 to 1
+    # base spatial profile goes from -1 to 1
     b_BASE = (tanh(3 * (x + p.Lx/3)))
 
     # f is the spatial structure of the function that represents anomaly from base
     f = 0.5 * (1 - tanh(3 * (x + p.Lx/3)))
-
-    # if no seasonal forcing , skip the cosine (so there's no infinity error)
-    if p.seasonal_period == 0.0
-        return p.b★ * b_BASE
-    end
 
     # S(t) is the seasonal clock: S<0 represents winter, S>0 represents summer
     S = cos(2π * t / p.seasonal_period)
@@ -443,114 +430,26 @@ function make_wind_stress(wind::WindForcing, domain::DomainConfig)
     return v_bcs
 end
 
-
 # Construct the grid
 
-function make_grid(domain::DomainConfig, seafloor_function, architecture, numhill)
+function make_grid(domain::DomainConfig, seafloor_function, architecture)
     """
-    Constructs the conputational grid with OR WITHOUT immersed boundary
-    if numhil == 0 (flat bottom), uses regular RectilinearGrid
-    otherwise uses ImmersedBoundaryGrid with seafloor
-
+    Constructs the conputational grid with immersed boundary
     GPU-compatible !!!!!!!! (hopefully)
     I learned from the testing that I have to pre-compute the seafloor on CPU
     then transfer to GPU
     """
     H, Lx, Ly = domain.H, domain.Lx, domain.Ly
     Nx, Ny, Nz = domain.Nx, domain.Ny, domain.Nz
-    x_stretch, z_stretch = domain.x_stretch, domain.z_stretch
-
-    """
-    add chebychev grid spacing at for x and z axes
-        specifically at the left boundary in x 
-        top and bottom in z
-    """ 
-
-    # x refined function is pulled out of make grid so lets call it
-
-    function x_refined_grid(i, rx = x_stretch, Lx=Lx, Nx=Nx)
-        ξ = (i - 1) / Nx
-        β = log(rx) # sets the ratio Δx_max / Δx_min = r
-
-        if rx == 1.0
-            stretched = ξ
-        else
-            stretched = (exp(β*ξ) - 1) / (exp(β) -1)
-        end
-
-        return -Lx/2 + Lx * stretched
-    end
-
-    #modified z stretch so its only on the top
-
-    function z_refined_grid(k, rz = z_stretch, H=H, Nz=Nz)
-        ξ = (k - 1) / Nz
-        β = log(rz)
-
-        if rz == 1.0 #need this to avoid divide by 0 error
-            stretched = ξ
-        else
-            stretched = (1 - exp(-β*ξ)) / (1 - exp(-β))
-        end
-
-        return -H + H * stretched
-    end
-
-    # function left_refined_x_faces(i)
-    #     ξ = (i - 1) / Nx 
-
-    #     β = 3.0 * x_stretch
-    #     if β > 0.01 
-    #         stretched = (exp(β * ξ) - 1) / (exp(β) - 1)
-    #     else
-    #         stretched = ξ
-    #     end
-
-    #     return -Lx/2 + Lx * stretched
-    # end
-
-    # function z_chebychev_grid(k)
-    #     ξ = (k - 1) / Nz 
-    #     cheby = 0.5 * (1 - cos(π * ξ))
-    #     uniform = ξ
-
-    #     stretched = (1 - z_stretch) * uniform + z_stretch * cheby
-
-    #     #map to domain [-H, 0]
-    #     return -H + H * stretched 
-    # end
-
-    if numhill == 0
-        if Ny == 1
-            return RectilinearGrid(
-                architecture, 
-                size = (Nx, Nz), 
-                x = x_refined_grid, 
-                z = z_refined_grid, 
-                halo = (4, 4), 
-                topology = (Bounded, Flat, Bounded)
-            )
-        else
-            return RectilinearGrid(
-                architecture, 
-                size = (Nx, Ny, Nz), 
-                x = x_refined_grid, 
-                y = (-Ly/2, Ly/2), 
-                z = z_refined_grid, 
-                halo = (4, 4, 4), 
-                topology = (Bounded, Periodic, Bounded)
-            )
-        end
-    end
-
-    ### otherwise , create immersed boundary grid with seafloor
 
     if Ny  == 1
+        #2D Grid with y dimension flat
+
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Nz), 
-            x = x_refined_grid, 
-            z = z_refined_grid,
+            x = (-Lx/2, Lx/2), 
+            z = (-H, 0),
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -565,8 +464,8 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Nz), 
-            x = x_refined_grid, 
-            z = z_refined_grid, 
+            x = (-Lx/2, Lx/2), 
+            z = (-H, 0), 
             halo = (4, 4), 
             topology = (Bounded, Flat, Bounded)
         )
@@ -578,14 +477,15 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
        
     else
         #3D Grid with y dimension Periodic
+
         #Create the CPU grid for computing coords
 
         cpu_grid = RectilinearGrid(
             CPU(), 
             size = (Nx, Ny, Nz), 
-            x = x_refined_grid, 
+            x = (-Lx/2, Lx/2), 
             y = (-Ly/2, Ly/2), 
-            z = z_refined_grid, 
+            z = (-H, 0), 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -601,9 +501,9 @@ function make_grid(domain::DomainConfig, seafloor_function, architecture, numhil
         underlying_grid = RectilinearGrid(
             architecture, 
             size = (Nx, Ny, Nz),
-            x = x_refined_grid, 
+            x = (-Lx/2, Lx/2), 
             y = (-Ly/2, Ly/2), 
-            z = z_refined_grid, 
+            z = (-H, 0), 
             halo = (4, 4, 4), 
             topology = (Bounded, Periodic, Bounded)
         )
@@ -642,7 +542,7 @@ function PhysicsParams(; Ra=1e11, Pr=1.0, b★=1.0, H=1.0, advection=true)
         advection_scheme = WENO()
         cfl = 0.5
     else
-        advection_scheme = Centered(order=2)
+        advection_scheme = nothing
         cfl = Inf
     end
 
@@ -657,14 +557,14 @@ function make_initial_buoyancy(b_init, Ny::Int)
         the input b_init governs the coldstart 
     """
 
-    @inline function noise(x,y, z)
-        return 1e-4 * (randn() - 0.5)
+    @inline function noise(x,z)
+        return 1e-6 * sin(2π * x) * sin(2π * z)
     end
 
     if Ny == 1
-        return (x,z) -> b_init + noise(x, 0, z)
+        return (x,z) -> b_init + noise(x,z)
     else
-        return (x,y,z) -> b_init + noise(x, y, z)
+        return (x,y,z) -> b_init + noise(x,z)
     end
 end
 
@@ -681,8 +581,7 @@ function OutputConfig(; enabled=true, base_dir="/output", time_interval_fraction
 end
 
 function setup_output_writers!(simulation, domain, physics, forcing, 
-                                output_config, filename_prefix, numhill, h₀_frac, b_init, 
-                                segment::Int = 1)
+                                output_config, filename_prefix, numhill, h₀_frac, b_init)
     """
     This function configures the output writers for the simulation
     """
@@ -693,7 +592,6 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     model = simulation.model
     τ_eq = sqrt(physics.Ra)
     time_interval = τ_eq / output_config.time_interval_fraction
-    time_interval = 0.1
 
     #global attributes to output in data file
     global_attributes = Dict(
@@ -736,7 +634,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     # checkpointer
     simulation.output_writers[:checkpointer] = Checkpointer(
         model, 
-        schedule = TimeInterval(1.0),
+        schedule = TimeInterval(200), 
         dir = project_dir, 
         prefix = string(filename_prefix, "_checkpoint"),
         cleanup = true
@@ -744,9 +642,9 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     # buoyancy output
     simulation.output_writers[:buoyancy] = NetCDFWriter(
-        model, (; b, chi=χ, ϕz = bw);
-        filename = joinpath(project_dir, "buoyancy_seg$(segment).nc"), 
+        model, (; b, chi=χ, ∫ϕz = bw), 
         schedule = TimeInterval(time_interval), 
+        filename = joinpath(project_dir, "buoyancy.nc"), 
         with_halos = false, 
         global_attributes = global_attributes,
         overwrite_existing = true
@@ -754,9 +652,9 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     # velocities output
     simulation.output_writers[:velocities] = NetCDFWriter(
-        model, (; u, v, w);
-        filename = joinpath(project_dir, "velocities_seg$(segment).nc"),
+        model, (; u, v, w), 
         schedule = TimeInterval(time_interval),
+        filename = joinpath(project_dir, "velocities.nc"), 
         with_halos = false, 
         global_attributes = global_attributes,
         overwrite_existing = true
@@ -764,10 +662,10 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     #section section_snapshots
     simulation.output_writers[:section_snapshots] = NetCDFWriter(
-        model, (; b, ke, pe);
-        filename = joinpath(project_dir, "section_snapshots_seg$(segment).nc"),
-        schedule = TimeInterval(10), #make time interval bigger for long run
+        model, (; b, ke, pe), 
+        schedule = TimeInterval(1), 
         indices = indices, 
+        filename = joinpath(project_dir, "section_snapshots.nc"), 
         with_halos = false, 
         global_attributes = global_attributes, 
         overwrite_existing = true
@@ -775,9 +673,9 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     # Zonal time means
     simulation.output_writers[:zonal_time_means] = NetCDFWriter(
-        model, (; b=b_avg_y);
-        filename = joinpath(project_dir, "zonal_time_means_seg$(segment).nc"),
-        schedule = AveragedTimeInterval(10, window=1), #make time interval larger for long run
+        model, (; b=b_avg_y), 
+        schedule = AveragedTimeInterval(1, window=1), 
+        filename = joinpath(project_dir, "zonal_time_means.nc"), 
         with_halos = false, 
         global_attributes = global_attributes, 
         overwrite_existing = true
@@ -785,10 +683,10 @@ function setup_output_writers!(simulation, domain, physics, forcing,
 
     #oceanostics diagnostics 
     simulation.output_writers[:oceanostics] = NetCDFWriter(
-        model, (; ke, ε, χ);
-        filename = joinpath(project_dir, "oceanostics_seg$(segment).nc"), 
-        schedule = TimeInterval(5), #make time interval larger for long
+        model, (; ke, ε, χ), 
+        schedule = TimeInterval(time_interval), 
         indices = indices, 
+        filename = joinpath(project_dir, "oceanostics.nc"), 
         with_halos = false, 
         global_attributes = global_attributes, 
         overwrite_existing = true
@@ -813,7 +711,7 @@ function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, winter_a
         b_time = "_summeronly"
     elseif summer_amplitude == 0.0
         b_time = "_winteronly"
-    elseif winter_amplitude != 0.0 && summer_amplitude != 0.0
+    elseif winter_amplitude != 0.0 & summer_amplitude != 0.0
         b_time = "_seasonal"
     else
         b_time = nothing
@@ -840,16 +738,13 @@ function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, winter_a
 end
 
 ######## MAIN SIMULATION Function
-function HorizontalConvectionSimulation(;
+function HorizontalConvectionSimulation_TEST(;
    #domain parameters
     Nx = 256, 
     Ny = 1,
     Nz = 32, 
     H = 1.0, 
-    α = 8.0,
-    x_stretch = 0.24,
-    z_stretch = 0.41,
-    stop_time = 10.0,
+    α = 8.0, 
 
     #topography parameters
     h₀_frac = 0.6, 
@@ -867,7 +762,8 @@ function HorizontalConvectionSimulation(;
     #buoyancy forcing parameters
     winter_amplitude = 0.0,
     summer_amplitude = 0.0, 
-    seasonal_period = 365.0,
+    seasonal_period = 365.0, 
+    custom_seasonal = nothing, 
 
     #coriolis parameters
     coriolis = false, 
@@ -890,29 +786,22 @@ function HorizontalConvectionSimulation(;
     #output parameters
     output_writer = true, 
     output_dir = "../output/testing/",
-    segment = 1,
 
     #computational parameters
     architecture = CPU()
 )
 
     # step 1. construct domain using DomainConfig
-    domain = DomainConfig(H=H, α=α, Nx=Nx, Ny=Ny, Nz=Nz, x_stretch=x_stretch, z_stretch=z_stretch)
+    domain = DomainConfig(H=H, α=α, Nx=Nx, Ny=Ny, Nz=Nz)
+    println("domain configured")
 
     # step 2. construct seafloor using make_seafloor
     seafloor = make_seafloor(domain, h₀_frac, numhill)
+    println("seafloor constructed")
 
     #step 3. construct the grid using make_grid
-    grid = make_grid(domain, seafloor, architecture, numhill)
-
-    if numhill == 0
-        @info "grid created : flat bottom (no immersed boundary)
-                            left refinement with x_stretch = $x_stretch and top refinement with z_stretch = $z_stretch"
-
-    else
-        @info "grid created : immersed boundary with $(numhill) hill(s)
-                            left refinement with x_stretch = $x_stretch and top refinment with z_stretch = $z_stretch"
-    end
+    grid = make_grid(domain, seafloor, architecture)
+    println("grid constructed")
 
     #step 4. construct physics params using PhysicsParams
     physics = PhysicsParams(Ra=Ra, Pr=Pr, b★=b★, H=H, advection=advection)
@@ -961,6 +850,8 @@ function HorizontalConvectionSimulation(;
 
     surface_buoyancy_func = make_surface_buoyancy(forcing, domain.Ny)
 
+    println("surface buoyancy forcing created")
+
     b_bcs = FieldBoundaryConditions(
         top = ValueBoundaryCondition(
             surface_buoyancy_func,
@@ -985,127 +876,52 @@ function HorizontalConvectionSimulation(;
 
     # step 8. construct the model 
 
-    # use ConjugateGradientPoissonSolver only for immersed boundary Grids
-    # for regular grid use the default pressure Solvers
+    pressure_solver = ConjugateGradientPoissonSolver(grid)
 
-    if numhill == 0
-        @info "Using default FFT-based pressure solver"
-        # no immersed boundary can use the fft based Solver
+    model = NonhydrostaticModel(
+        grid = grid, 
+        advection = physics.advection_scheme, 
+        timestepper = :RungeKutta3, 
+        tracers = :b, 
+        buoyancy = BuoyancyTracer(), 
+        coriolis = coriolis_obj,
+        closure = ScalarDiffusivity(; physics.ν, physics.κ), 
+        hydrostatic_pressure_anomaly = CenterField(grid), 
+        pressure_solver = pressure_solver, 
+        boundary_conditions = boundary_conditions
+    )
 
-        if coriolis_obj === nothing
-            model = NonhydrostaticModel(
-                grid = grid, 
-                advection = physics.advection_scheme, 
-                timestepper = :RungeKutta3, 
-                tracers = :b, 
-                buoyancy = BuoyancyTracer(),
-                closure = ScalarDiffusivity(; physics.ν, physics.κ), 
-                hydrostatic_pressure_anomaly = CenterField(grid), 
-                boundary_conditions = boundary_conditions
-            )
-        else
-            model = NonhydrostaticModel(
-                grid = grid, 
-                advection = physics.advection_scheme, 
-                timestepper = :RungeKutta3, 
-                tracers = :b, 
-                buoyancy = BuoyancyTracer(), 
-                coriolis = coriolis_obj,
-                closure = ScalarDiffusivity(; physics.ν, physics.κ), 
-                hydrostatic_pressure_anomaly = CenterField(grid), 
-                boundary_conditions = boundary_conditions
-            )
-        end
-        
-    else
-        @info "using ConjugateGradient pressure solver for immersed boundary"
-        # immersed boundary --> need ConjugateGradientPoissonSolver
-
-        pressure_solver = ConjugateGradientPoissonSolver(grid)
-
-        if coriolis_obj === nothing
-            model = NonhydrostaticModel(
-                grid = grid, 
-                advection = physics.advection_scheme, 
-                timestepper = :RungeKutta3, 
-                tracers = :b, 
-                buoyancy = BuoyancyTracer(),
-                closure = ScalarDiffusivity(; physics.ν, physics.κ), 
-                hydrostatic_pressure_anomaly = CenterField(grid), 
-                pressure_solver = pressure_solver, 
-                boundary_conditions = boundary_conditions
-            )
-        else
-            model = NonhydrostaticModel(
-                grid = grid, 
-                advection = physics.advection_scheme, 
-                timestepper = :RungeKutta3, 
-                tracers = :b, 
-                buoyancy = BuoyancyTracer(), 
-                coriolis = coriolis_obj,
-                closure = ScalarDiffusivity(; physics.ν, physics.κ), 
-                hydrostatic_pressure_anomaly = CenterField(grid), 
-                pressure_solver = pressure_solver, 
-                boundary_conditions = boundary_conditions
-            )
-        end
-    end
+    println("model set up with timestepper, pressure solver, boundary conditions")
 
     # step 9. set the initial conditions
     B₀ = make_initial_buoyancy(b_init, domain.Ny)
+    println("B₀ created: " , typeof(B₀))
     set!(model, b = B₀)
 
     # step 10. construct the simulation timescale and simulation
+
     τ_eq = sqrt(Ra)
     min_Δz = minimum_zspacing(grid)
     diffusive_time_scale = min_Δz^2 / physics.κ
     advective_time_scale = sqrt(min_Δz / b★)
     Δt = 0.1 * minimum([diffusive_time_scale, advective_time_scale])
 
-    simulation = Simulation(model, Δt = Δt, stop_time = stop_time + Δt * 10)
+    println("timestep determined using diffusive vs advective timescale")
+
+    simulation = Simulation(model, Δt = Δt, stop_time = 10)
     #note ** we need an edit here so that the seasonal cycle has a long tau equilibirum ** 
 
-    # for a purely diffusive simulation, we add zero velocities call back to ensure pure diffusion
-
-    if !advection
-        function zero_velocities!(sim)
-            fill!(sim.model.velocities.u, 0)
-            fill!(sim.model.velocities.v, 0)
-            fill(sim.model.velocities.w, 0)
-        end
-        simulation.callbacks[:zero_velocities] = Callback(zero_velocities!, IterationInterval(1))
-    end
+    println("simulation initialized! about to start ...")
 
     #step 11. add timestepper
 
     wizard = TimeStepWizard(cfl = physics.cfl, diffusive_cfl = 0.2)
     simulation.callbacks[:wizard] = Callback(wizard, IterationInterval(50))
 
-    # progress(sim) = begin
-    #     @printf("i: % 6d, sim time: % 1.3f, wall_time: % 10s, Δt: % 1.4f, advective CFL: %.2e, diffusive CFL: %.2e\n",
-    #         iteration(sim), time(sim), prettytime(sim.run_wall_time), 
-    #         sim.Δt, AdvectiveCFL(sim.Δt)(sim.model), DiffusiveCFL(sim.Δt)(sim.model)
-    # )flush(stdout)
-    # end
-
-    progress(sim) = begin
-    adv_cfl = AdvectiveCFL(sim.Δt)(sim.model)
-    diff_cfl = DiffusiveCFL(sim.Δt)(sim.model)
-
-    adv_cfl  = adv_cfl  === nothing ? 0.0 : adv_cfl
-    diff_cfl = diff_cfl === nothing ? 0.0 : diff_cfl
-
-    @printf("i: %6d, sim time: %1.3f, wall_time: %10s, Δt: %1.4f, advective CFL: %.2e, diffusive CFL: %.2e\n",
-        iteration(sim),
-        time(sim),
-        prettytime(sim.run_wall_time),
-        sim.Δt,
-        adv_cfl,
-        diff_cfl
+    progress(sim) = @printf("i: % 6d, sim time: % 1.3f, wall_time: % 10s, Δt: % 1.4f, advective CFL: %.2e, diffusive CFL: %.2e\n",
+        iteration(sim), time(sim), prettytime(sim.run_wall_time), 
+        sim.Δt, AdvectiveCFL(sim.Δt)(sim.model), DiffusiveCFL(sim.Δt)(sim.model)
     )
-
-    flush(stdout)
-    end
 
     simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
@@ -1119,8 +935,7 @@ function HorizontalConvectionSimulation(;
 
     setup_output_writers!(
         simulation, domain, physics, forcing, 
-        output_config, filename_prefix, numhill, h₀_frac, b_init, 
-        segment
+        output_config, filename_prefix, numhill, h₀_frac, b_init
     )
 
     return simulation
