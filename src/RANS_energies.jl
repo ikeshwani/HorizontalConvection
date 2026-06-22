@@ -30,15 +30,13 @@ function ReynoldsAverageCalc(ds, var)
     #handle both string and array input
     if var isa String
         var_data = ds[var]
-        var_ref = Array(var_data[:, :, :, 2])
     else
         var_data = var # already an array
-        var_ref - var_data[:, :, :, 2]
     end
 
     #create a wet mask that we can apply to the data (so we take volume average only over the liquid in simulation)
 
-    var_ref = Array(var[:, :, :, 2]) #ref buoyancy can be at any time except the initial 
+    var_ref = Array(var_data[:, :, :, 2]) #ref buoyancy can be at any time except the initial
     
     # define wet array as bool array : true = fluid, false = hills 
     # size is (Nx, Ny, Nz)
@@ -71,7 +69,7 @@ function ReynoldsAverageCalc(ds, var)
         t_inds = t_start:n
 
         #load variable block over which we take the time mean
-        var_block = Array(var[1:Nx, 1:Ny, 1:Nz, t_inds])
+        var_block = Array(var_data[1:Nx, 1:Ny, 1:Nz, t_inds])
 
         #apply wet mask land
         for k in axes(var_block, 4)
@@ -84,7 +82,7 @@ function ReynoldsAverageCalc(ds, var)
 
         # we can extract the fluctuating component of variable from it
 
-        varₙ = Array(var[1:Nx, 1:Ny, 1:Nz, n])
+        varₙ = Array(var_data[1:Nx, 1:Ny, 1:Nz, n])
         mask_land!(varₙ, wet)
 
         var_prime[:, :, :, n] = varₙ .- reshape(var_bar_n, Nx, 1, Nz)
@@ -108,17 +106,20 @@ function ϕ_z_calc(ds_b, ds_v)
         and outputs ϕz mean and fluctuating arrays as a function of time
     """
 
+    Nx, Ny, Nz = ds_b.attrib["Nx"], ds_b.attrib["Ny"], ds_b.attrib["Nz"]
+    time = ds_b["time"][:]
+    Nt = length(time)
+
     #preallocate arrays
     ϕz_mean = zeros(Nt)
     ϕz_turb = zeros(Nt)
 
-    Nx, Ny, Nz = ds_b.attrib["Nx"], ds_b.attrib["Ny"], ds_b.attrib["Nz"]
-    Δx, Δy, Δz = reshape(ds_b["Δx_caa"][:], Nx, 1, 1), reshape(ds_b["Δy_aca"][:], 1, Ny, 1), reshape(ds_b["Δz_acc"][:], 1, 1, Nz)
+    Δx, Δy, Δz = reshape(ds_b["Δx_caa"][:], Nx, 1, 1), reshape(ds_b["Δy_aca"][:], 1, Ny, 1), reshape(ds_b["Δz_aac"][:], 1, 1, Nz)
 
     ΔV = Δx .* Δy .* Δz
 
     #create a wet mask
-    b = ds["b"]
+    b = ds_b["b"]
     b_ref = Array(b[:, :, :, 2])
     wet = b_ref .!= 0.0
 
@@ -129,10 +130,7 @@ function ϕ_z_calc(ds_b, ds_v)
         wet .* ΔV,
         dims = (1, 2, 3)
     )[1, 1, 1]
-    
-    time = ds_b["time"][:]
-    Nt = length(time)
-    
+
     # to calculate the vertical buoyancy flux we need the mean and fluct components of w and b which we can get from calling the RANS function
     b_bar, b_prime = ReynoldsAverageCalc(ds_b, "b")
 
