@@ -4,9 +4,9 @@ using NCDatasets
 using Statistics
 using Printf
 
-output_dir =  "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_8x_stretch/b_base/Ra1e7/512_64/"
+output_dir =  "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
 
-buoy_file = joinpath(output_dir, "buoyancy.nc")
+buoy_file = joinpath(output_dir, "buoyancy_seg3.nc")
 #oc_file = joinpath(output_dir, "oceanostics.nc")
 #vel_file = joinpath(output_dir, "velocities.nc")
 
@@ -39,7 +39,7 @@ println("last few x spacings : ", Δx[end-4:end])
 println("\n first few z spacings : ", Δz[1:5])
 println("last few z spacings : ", Δz[end-4:end])
 
-plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU_test/cheby_grid_verification/"
+plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/cheby_grid_verification/"
 mkpath(plot_dir)
 
 println("creating plot 1: buoyancy heatmap with grid visualization")
@@ -48,7 +48,7 @@ n = 100
 t = round(time[100])
 
 fig = Figure(size=(1000,600))
-ax = Axis(fig[1,1], xlabel = "x", ylabel="z", title = "Ra=1e7 experiment : buoyancy heatmap for variable grid at time $t")
+ax = Axis(fig[1,1], xlabel = "x", ylabel="z", title = "Ra=1e8 experiment : buoyancy heatmap for variable grid at time $t")
 
 hm = heatmap!(ax, x, z, b[:, 8, :, n])
 Colorbar(fig[1,2], hm)
@@ -61,7 +61,7 @@ for j in z[1:5:end]
     hlines!(ax, z, color=:white, alpha=0.3, linewidth=0.5)
 end
 
-save(joinpath(plot_dir, "b_hm_8x_chebygrid.png"), fig)
+save(joinpath(plot_dir, "b_hm_4x_chebygrid.png"), fig)
 println("saved first figure")
 
 
@@ -70,16 +70,16 @@ println("making second figure : grid spacing size as function of index")
 fig2 = Figure(size = (1000, 600))
 
 ax1 = Axis(fig2[1,1], 
-            xlabel = "grid index i", ylabel = "Δx", title="x-spacing for 8x cheby grid")
+            xlabel = "grid index i", ylabel = "Δx", title="x-spacing for 4x cheby grid")
 
 ax2 = Axis(fig2[1,2], 
-           xlabel = "grid index k", ylabel = "Δz", title="z-spacing for 8x cheby grid" 
+           xlabel = "grid index k", ylabel = "Δz", title="z-spacing for 4x cheby grid" 
 )
 
 lines!(ax1, 1:length(Δx), Δx)
 lines!(ax2, 1:length(Δz), Δz)
 
-save(joinpath(plot_dir, "xz_8x_chebyspacing.png"), fig2)
+save(joinpath(plot_dir, "xz_4x_chebyspacing.png"), fig2)
 
 println("saved second figure")
 

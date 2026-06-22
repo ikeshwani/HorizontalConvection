@@ -1,4 +1,4 @@
-println("Running Ra1e5 4x stretching simulation from beginning segment = 0 and b_init=0")
+println("Running Ra1e5 4x stretching simulation from from t=1 to t=2, segment=2 and b_init=0")
 #we change the stop time to 2.0 seconds, so that i can control when the sim time is over rather than
 
 
@@ -11,7 +11,7 @@ simulation = HorizontalConvectionSimulation(;
     Nx = 512, 
     Ny = 256,
     Nz = 128, 
-    H = 1.0, 
+    H = 2.0, 
     α = 4.0,
     x_stretch = 4.0,   #4x stretch
     z_stretch = 4.0,   #4x stretch
@@ -56,13 +56,13 @@ simulation = HorizontalConvectionSimulation(;
     #output parameters
     output_writer = true,
     output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e5/4x_stretch/",
-    segment = 1, 
+    segment = 2, 
 
     #computational parameters
     architecture = GPU()
     )
 
-run!(simulation, pickup=true)
+run!(simulation, pickup=false)
 
 # save final checkpoint immediately after run completes
 # @info "Run complete at t=$(time(simulation.model)), saving final checkpoint..."

@@ -7,7 +7,7 @@ using NaNStatistics
 
 plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/RA1e8/4x_stretch/figures/"
 
-ds = NCDataset("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/combined_t194.nc")
+ds = NCDataset("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/combined_t385.nc")
 
 b = ds["b"];
 χ = ds["chi"];
@@ -28,89 +28,94 @@ Nx, Ny, Nz = ds.attrib["Nx"], ds.attrib["Ny"], ds.attrib["Nz"]
 #compute wet mask from the second time step (b=0 every intially so it would be wrong)
 wet = Array(b[:, :, :, 2]) .!= 0 # size [Nx, Ny, Nz]
 
-b_range = (nanminimum(Array(b[:, :, :, end])[wet]), nanmaximum(Array(b[:, :, :, end])[wet]))
+b_range = (-1, 1)
 
-function get_ψb(u, b, wet, ds; b_range, n_b_bins = 100)
-
+function get_ψb(u, b, wet, ds; b_range, n_b_bins = 501)
     Nx, Ny, Nz = ds.attrib["Nx"], ds.attrib["Ny"], ds.attrib["Nz"]
-    Δy = reshape(ds["Δy_aca"][:], 1, Ny, 1)
+
+    Δy = reshape(ds["Δy_aca"][:], 1, Ny, 1, 1) #[Nx, Ny, Nz, Nt]
+    Δz = reshape(ds["Δz_aac"][:], 1, 1, Nz, 1) # [Nx, Ny, Nz, Nt]
     Nt = size(u, 4)
     b_min, b_max = b_range
     b_bins = range(b_min, b_max, length=n_b_bins)
-
-    # integrate u over y to get array w size[Nx, Nz, Nt]
 
     u_full = Array(u[1:Nx, 1:Ny, 1:Nz, :]) #[Nx, Ny, Nz, Nt]
     b_full = Array(b[:, :, :, :])           #[Nx, Ny, Nz, Nt]
     
     #apply wet masks
-    wet4d = repeat(wet, 1, 1, 1, Nt) #[Nx, Ny, Nz, Nt]
+    wet4d = repeat(wet, outer=(1, 1, 1, Nt)) #[Nx, Ny, Nz, Nt]
     u_full[.!wet4d] .= NaN
     b_full[.!wet4d] .= NaN
 
     #take mean of b overy y dim
-    b_xzt = nanmean(b_full, dims=2)[:, 1, :, :] # [Nx, Nz, Nt]
-
-    # integrate u over y and weight by dz in one calculation
-    ∫udy_dz = nansum(u_full .* Δy, dims=2)[:, 1, :, :]  .*
-            reshape(ds["Δz_aac"][:], 1, Nz, 1) #[Nx, Nz, Nt]
+    ############# DONT TAKE THE MEAN 
+    #DEFINE MASK IN FOR LOOP HERE 
+    #IN THE MASK DEFINE ∫udy = nansum(u_full .* Δy .* M, dims=2)[:, 1, :, :]
+    # then weigh by dz and integrate in z coord in a separate line but still in the for loop 
 
     # ψ(x, b, t) streamfunction in buoyancy space
     ψ_b = zeros(Float32, Nx, n_b_bins, Nt) # [Nx, Nb, Nt]
 
     for (i, b_0) in enumerate(b_bins)
-        M = b_xzt .< b_0
-        ψ_b[:, i, :] = nansum(∫udy_dz .* M, dims=2)[:, 1, :] #[Nx, Nt]
+        #boolean mask : true for cells with b < b_0
+        M = b_full .< b_0 # has size [Nx, Ny, Nz, Nt]
+
+        # integrate u over y where b < b_0 -- now ∫udy will have size [Nx, Nz, Nt]
+        ∫udy = nansum(u_full .* Δy .* M, dims=2)[:, 1, :, :] #[Nx, Nz, Nt]
+
+        # now we integrate ∫udy over z so we get ψ = ∫udy dz and its in b space because we masked
+
+        ψ_b[:, i, :] = -nansum(∫udy .* reshape(ds["Δz_aac"][:], 1, Nz, 1), dims=2)[:, 1, :] #[Nx, Nt]
     end
 
     return ψ_b, collect(b_bins)
 end
 
-ψ_b, b_out = get_ψb(u, b, wet, ds; b_range)
+ψ_b, b_out = get_ψb(u, b, wet, ds; b_range = b_range)
 
 
-function plot_ψ_snapshots(ψ_b, t, x, b)
+# function plot_ψ_snapshots(ψ_b, t, x, b)
 
-    # find time indices closest to your target times
-    target_times = [12, 25, 40, 55]
-    t_indices    = [argmin(abs.(t .- τ)) for τ in target_times]
+#     # find time indices closest to your target times
+#     target_times = [12, 25, 40, 55]
+#     t_indices    = [argmin(abs.(t .- τ)) for τ in target_times]
 
-    clim = maximum(abs.(filter(!isnan, vec(ψ_b))))
+#     clim = maximum(abs.(filter(!isnan, vec(ψ_b))))
 
-    fig = Figure(size=(1200, 800))
+#     fig = Figure(size=(1200, 800))
 
-    for (n, tidx) in enumerate(t_indices)
-        row = (n - 1) ÷ 2 + 1
-        col = (n - 1) % 2 + 1
+#     for (n, tidx) in enumerate(t_indices)
+#         row = (n - 1) ÷ 2 + 1
+#         col = (n - 1) % 2 + 1
 
-        ax = Axis(fig[row, col],
-            title  = "ψ_b at t = $(round(t[tidx], digits=1))s",
-            xlabel = "x",
-            ylabel = "b"
-        )
+#         ax = Axis(fig[row, col],
+#             title  = "ψ_b at t = $(round(t[tidx], digits=1))s",
+#             xlabel = "x",
+#             ylabel = "b"
+#         )
 
-        ψ_snap = ψ_b[:, :, tidx]                        # [Nx, Nz]
+#         ψ_snap = ψ_b[:, :, tidx]                        # [Nx, Nz]
 
-        hm = heatmap!(ax, x, b, ψ_snap;
-            colormap = :RdBu,
-            colorrange = (-clim, clim)
-        )
-    end
-    Colorbar(fig[1:2, 3], fig.content[1], label="ψ_b")
+#         hm = heatmap!(ax, x, b, ψ_snap;
+#             colormap = :RdBu,
+#             colorrange = (-clim, clim)
+#         )
+#     end
+#     Colorbar(fig[1:2, 3], hm, label="ψ_b")
 
-    return fig
-end
+#     return fig
+# end
 
-@info("creating plot 1: surface buoyancy versus x at diff times")
+# @info("creating plot 1: surface buoyancy versus x at diff times")
 
-fig3 = plot_ψ_snapshots(ψ_b, time, x, b_out)
+# fig3 = plot_ψ_snapshots(ψ_b, time, x, b_out)
 
-save(joinpath(plot_dir, "psi_snapshots.png"), fig3)
-@info(" saved psi_snapshots.png")
+# save(joinpath(plot_dir, "psi_snapshots.png"), fig3)
+# @info(" saved psi_snapshots.png")
 
 output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
 
-out_path = joinpath(output_dir, "psi_b_t194.nc")
+out_path = joinpath(output_dir, "psi_b_t194_new.nc")
 
 NCDataset(out_path, "c") do ds_out
     # define dimensions

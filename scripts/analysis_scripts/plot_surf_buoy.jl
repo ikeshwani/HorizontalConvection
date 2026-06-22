@@ -2,8 +2,8 @@ using NCDatasets
 using CairoMakie
 using Printf
 
-output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e10/4x_stretch/512_128/"
-buoy_file = joinpath(output_dir, "buoyancy_seg1.nc")
+output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
+buoy_file = joinpath(output_dir, "buoyancy_seg3.nc")
 
 ds_b = NCDataset(buoy_file, "r")
 b★ = ds_b.attrib["b★"]
@@ -11,7 +11,7 @@ Lx = ds_b.attrib["Lx"]
 H = ds_b.attrib["H"]
 seasonal_amplitude = 0.0
 
-plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/chapter1/RA1e10/4x_stretch/verification_plots/"
+plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/RA1e8/4x_stretch/verification_plots/"
 mkpath(plot_dir)
 
 function expected_surface_bc(x, t, b★, Lx)

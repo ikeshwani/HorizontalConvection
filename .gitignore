@@ -1,0 +1,18 @@
+*.nc
+*.jld2
+*.out
+
+# Generated figures and animations (reproducible from scripts)
+figures/
+animations/
+*.png
+*.mp4
+
+# Machine-specific (do not commit) and editor/tooling junk
+LocalPreferences.toml
+.ipynb_checkpoints/
+.claude/
+
+# SLURM log dirs and stray files
+output_message/
+z_sf[[]i[]]

@@ -11,14 +11,14 @@ experiment  = "Control"
 Ra_str      = "RA1e8"
 stretch_str = "4x_stretch"
 grid_str    = "512_128"
-seg_range   = 1:9
+seg_range   = 1:12
 avg_window  = 10.0          # time units to average at end of run
 
 numhill     = 0
 h₀_frac     = 0.0
 
 data_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/$(Ra_str)/$(stretch_str)/$(grid_str)/"
-gmix_file = joinpath(data_dir, "Gmix_regions_Control_RA1e8_seg1to9.nc")
+gmix_file = joinpath(data_dir, "Gmix_regions_Control_RA1e8_seg1to12.nc")
 plot_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/$(experiment)/$(Ra_str)/$(stretch_str)/figures/"
 mkpath(plot_dir)
 
@@ -108,22 +108,27 @@ end   # [Nx, Nz]
 # =========================================================
 # buoyancy contour levels
 # =========================================================
-b_levels = b★ .* [-1.0, -0.8, -0.75, -0.7, -0.6, -0.5, -0.25, -0.2, -0.15, -0.1, 0.1, 0.25, 0.5, 0.75, 1.0]
+b_levels = b★ .* [-0.7, -0.6, -0.5, -0.25, -0.22, -0.21, -0.2, -0.15, -0.1, 0.0, 0.1, 0.25, 0.5, 0.75, 1.0]
 
 # =========================================================
 # figure
 # =========================================================
 fig = Figure(size=(1100, 400))
 ax  = Axis(fig[1, 1];
-    xlabel = "x / H",
-    ylabel = "z / H",
-    title  = "$(experiment)  Ra = $(Ra_str) — time-mean ψ with b contours (last $(avg_window) τ)",
-    limits = (x[1], x[end], z[1], 0.0),
+    xlabel         = "x / H",
+    ylabel         = "z / H",
+    title          = "$(experiment)  Ra = $(Ra_str) — time-mean ψ with b contours (last $(avg_window) τ)",
+    limits         = (x[1], x[end], z[1], 0.0),
+    titlesize      = 26,
+    xlabelsize     = 20,
+    ylabelsize     = 20,
+    xticklabelsize = 14,
+    yticklabelsize = 14,
 )
 
 ψ_lim = 0.004   # hardcoded so both experiments share the same colorrange
 hm = heatmap!(ax, x, z, ψ_mean; colormap=:balance, colorrange=(-ψ_lim, ψ_lim))
-Colorbar(fig[1, 2], hm; label="ψ")
+Colorbar(fig[1, 2], hm; label="ψ", labelsize=18, ticklabelsize=14)
 
 # buoyancy contours
 contour!(ax, x, z, b_mean; levels=b_levels, color=:black, linewidth=0.7, labels=true, labelsize=9)
@@ -137,6 +142,23 @@ hlines!(ax, zBL; color=(:white, 0.85), linewidth=2.5, linestyle=:dash)
 # sub-BL region boundaries
 for xb in x_sub_BL
     vlines!(ax, xb; ymax=z_frac_BL, color=(:white, 0.85), linewidth=2.0, linestyle=:dot)
+end
+
+# region labels — z placed at 75 % of full depth to avoid the near-zero ψ band
+let region_label_data = [
+    ((x[1]   + x_plume) / 2,  z[1] * 0.75,   "Plume"),
+    ((x_plume + x[end]) / 2,  zBL  / 2,      "BL"),
+    ((-1.8   + -1.35)   / 2,  z[1] * 0.75,   "Basin 0"),
+    ((-1.35  + -0.65)   / 2,  z[1] * 0.75,   "Hill 1"),
+    ((-0.65  + -0.35)   / 2,  z[1] * 0.75,   "Basin 1"),
+    ((-0.35  +  0.35)   / 2,  z[1] * 0.75,   "Hill 2"),
+    (( 0.35  +  0.65)   / 2,  z[1] * 0.75,   "Basin 2"),
+    (( 0.65  +  1.35)   / 2,  z[1] * 0.75,   "Hill 3"),
+    (( 1.35  + x[end])  / 2,  z[1] * 0.75,   "Basin 3"),
+]
+    for (xc, zc, lab) in region_label_data
+        text!(ax, xc, zc; text=lab, color=:white, fontsize=11, align=(:center, :center))
+    end
 end
 
 outpath = joinpath(plot_dir, "psi_contour.png")
@@ -197,14 +219,19 @@ let
 
     fig = Figure(size=(1100, 400))
     ax  = Axis(fig[1, 1];
-        xlabel = "x / H",
-        ylabel = "z / H",
-        title  = "$(experiment)  Ra = $(Ra_str) — time-mean log₁₀(χ) with b contours (last $(avg_window) τ)",
-        limits = (x[1], x[end], z[1], 0.0),
+        xlabel         = "x / H",
+        ylabel         = "z / H",
+        title          = "$(experiment)  Ra = $(Ra_str) — time-mean log₁₀(χ) with b contours (last $(avg_window) τ)",
+        limits         = (x[1], x[end], z[1], 0.0),
+        titlesize      = 26,
+        xlabelsize     = 20,
+        ylabelsize     = 20,
+        xticklabelsize = 14,
+        yticklabelsize = 14,
     )
 
     hm = heatmap!(ax, x, z, chi_log; colormap=:delta, colorrange=(clim_lo, clim_hi))
-    Colorbar(fig[1, 2], hm; label="log₁₀(χ)")
+    Colorbar(fig[1, 2], hm; label="log₁₀(χ)", labelsize=18, ticklabelsize=14)
 
     contour!(ax, x, z, b_mean; levels=b_levels, color=:black, linewidth=0.7, labels=true, labelsize=9)
 
@@ -229,14 +256,19 @@ let
 
     fig = Figure(size=(1100, 400))
     ax  = Axis(fig[1, 1];
-        xlabel = "x / H",
-        ylabel = "z / H",
-        title  = "$(experiment)  Ra = $(Ra_str) — time-mean log₁₀(ε) with b contours (last $(avg_window) τ)",
-        limits = (x[1], x[end], z[1], 0.0),
+        xlabel         = "x / H",
+        ylabel         = "z / H",
+        title          = "$(experiment)  Ra = $(Ra_str) — time-mean log₁₀(ε) with b contours (last $(avg_window) τ)",
+        limits         = (x[1], x[end], z[1], 0.0),
+        titlesize      = 26,
+        xlabelsize     = 20,
+        ylabelsize     = 20,
+        xticklabelsize = 14,
+        yticklabelsize = 14,
     )
 
     hm = heatmap!(ax, x, z, eps_log; colormap=:curl, colorrange=(clim_lo, clim_hi))
-    Colorbar(fig[1, 2], hm; label="log₁₀(ε)")
+    Colorbar(fig[1, 2], hm; label="log₁₀(ε)", labelsize=18, ticklabelsize=14)
 
     contour!(ax, x, z, b_mean; levels=b_levels, color=:black, linewidth=0.7, labels=true, labelsize=9)
 

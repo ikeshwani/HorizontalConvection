@@ -7,10 +7,10 @@ using NaNStatistics
 # ---- paths ----
 data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
 plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/Control/RA1e8/4x_stretch/figures/"
-outfile  = joinpath(data_dir, "Gmix_regions_Control_RA1e8_seg1to10.nc")
+outfile  = joinpath(data_dir, "Gmix_regions_Control_RA1e8_seglast.nc")
 mkpath(plot_dir)
 
-segments = 1:10
+segments = 9:10
 
 # ---- load grid info from seg1 ----
 ds1    = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"))
@@ -88,13 +88,13 @@ Z = reshape(z, 1, 1, :)
 region_masks = [
     ("plume",          X .< -1.8),
     ("boundary_layer", (Z .> zBL) .& (X .>= -1.8)),
-    ("basin0",         (X .>= -1.8) .& (X .< -1.35) .& (Z .<= zBL)),
+    ("basin0",         (X .>= -1.8) .& (X .< -1.35) .& (Z .< zBL)),
     ("hill1",          (X .>= -1.35) .& (X .< -0.65) .& (Z .< zBL)),
     ("basin1",         (X .>= -0.65) .& (X .< -0.35) .& (Z .< zBL)),
     ("hill2",          (X .>= -0.35) .& (X .< 0.35)  .& (Z .< zBL)),
     ("basin2",         (X .>= 0.35)  .& (X .< 0.65)  .& (Z .< zBL)),
-    ("hill3",          (X .>= 0.65)  .& (X .< 1.35)  .& (Z .<= zBL)),
-    ("basin3",         (X .>= 1.35)  .& (Z .<= zBL)),
+    ("hill3",          (X .>= 0.65)  .& (X .< 1.35)  .& (Z .< zBL)),
+    ("basin3",         (X .>= 1.35)  .& (Z .< zBL)),
 ]
 
 ΔA_2d = dropdims(ΔA, dims=3)
@@ -131,15 +131,12 @@ function G_mix_calc(b_region::Vector, χdV_region::Vector, b_range; n_b_bins=500
     b_sorted = b_region[perm]
     cum_χdV  = cumsum(χdV_region[perm])
 
-    integral_vals = zeros(n_b_bins)
-    for (i, b_0) in enumerate(b_bins)
-        idx = searchsortedlast(b_sorted, b_0)
-        integral_vals[i] = idx > 0 ? cum_χdV[idx] : 0.0
-    end
+    χdV_smooth = gaussian_smooth(cum_χdV, 20)
 
-    integral_smooth = gaussian_smooth(integral_vals, 15)
+
+    # integral_smooth = gaussian_smooth(integral_vals, 15)
     db    = step(b_bins)
-    G_mix = 0.5 .* diff(diff(integral_smooth)) ./ db^2
+    G_mix = 0.5*diff(diff(integral_vals)) ./ db^2
     b_out = collect(b_bins)[2:end-1]
     return b_out, G_mix
 end

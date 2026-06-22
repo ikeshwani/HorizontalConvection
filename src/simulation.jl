@@ -59,7 +59,7 @@ end
 
 function DomainConfig(; H= 1.0, α = 8.0, Nx = 256, Ny = 256, Nz = 32, x_stretch=0.24, z_stretch=0.41)
     Lx = α * H
-    Ly = Lx/2 #chapter one configuration
+    Ly = Lx/(Nx//Ny) #chapter one configuration is Lx/2!! 
     return DomainConfig(H, Lx, Ly, Nx, Ny, Nz, x_stretch, z_stretch)
 end
 
@@ -76,17 +76,21 @@ struct Seafloor2D
     Lx::Float64
     h₀_1::Float64
     h₀_2::Float64
+    h₀_3::Float64
     hill_length::Float64
 end
 
 @inline function (s::Seafloor2D)(x,z)
-    hill_1 = (2/3) * s.h₀_1 *
-        exp(-(x - 0.0 * s.Lx / 2)^2 / (2 * s.hill_length^2))
+    hill_1 = s.h₀_1 *
+        exp(-(x + s.Lx / 4)^2 / (2 * s.hill_length^2))
 
-    hill_2 = s.h₀_2 *
-        exp(-(x - 0.5 * s.Lx / 2)^2 / (2 * s.hill_length^2))
+    hill_2 = (0.75) * s.h₀_2 *
+        exp(-(x)^2 / (2 * s.hill_length^2))
 
-    return -s.H + (hill_1 + hill_2)
+    hill_3 = (0.5) * s.h₀_3 *
+        exp(-(x - s.Lx/4)^2 / (2 * s.hill_length^2))
+
+    return -s.H + (hill_1 + hill_2 + hill_3)
 end
 
 struct Seafloor3D
@@ -95,6 +99,7 @@ struct Seafloor3D
     Ly::Float64
     h₀_1::Float64
     h₀_2::Float64
+    h₀_3::Float64
     hill_length::Float64
     channel_width::Float64
 end
@@ -102,15 +107,18 @@ end
 ### now we repeat for the 3D seafloor
 
 @inline function (s::Seafloor3D)(x, y, z)
-    hill_1 = (2/3) * s.h₀_1 *
-        exp(-(x - 0.0 * s.Lx / 2)^2 / (2 * s.hill_length^2))
+    hill_1 = s.h₀_1 *
+        exp(-(x + s.Lx / 4)^2 / (2 * s.hill_length^2))
 
-    hill_2 = s.h₀_2 *
-        exp(-(x - 0.5 * s.Lx / 2)^2 / (2 * s.hill_length^2))
+    hill_2 = (0.75) * s.h₀_2 *
+        exp(-(x)^2 / (2 * s.hill_length^2))
+
+    hill_3 = (0.5) * s.h₀_3 *
+        exp(-(x - s.Lx/4)^2 / (2 * s.hill_length^2))
 
     channel = 1 - (1/3) * exp(-(y^2) / (2 * s.channel_width^2))
 
-    return -s.H + (hill_1 + hill_2) * channel
+    return -s.H + (hill_1 + hill_2 + hill_3) * channel
 end
 
 function make_seafloor(domain::DomainConfig, h₀_frac, numhill)
@@ -132,12 +140,20 @@ function make_seafloor(domain::DomainConfig, h₀_frac, numhill)
     if numhill == 1
         h₀_1 = h₀_frac * H
         h₀_2 = 0.0
+        h₀_3 = 0.0
     elseif numhill == 2
         h₀_1 = h₀_frac * H 
         h₀_2 = h₀_frac * H
+        h₀_3 = 0.0
     elseif numhill == 0 
         h₀_1 = 0.0
         h₀_2 = 0.0
+        h₀_3 = 0.0
+    elseif numhill == 3
+        h₀_1 = h₀_frac * H 
+        h₀_2 = h₀_frac * H 
+        h₀_3 = h₀_frac * H 
+
     end
 
     hill_length = Lx/32
@@ -148,7 +164,8 @@ function make_seafloor(domain::DomainConfig, h₀_frac, numhill)
             H, 
             Lx, 
             h₀_1, 
-            h₀_2, 
+            h₀_2,
+            h₀_3, 
             hill_length
         )
     else
@@ -157,7 +174,8 @@ function make_seafloor(domain::DomainConfig, h₀_frac, numhill)
             Lx, 
             Ly, 
             h₀_1, 
-            h₀_2, 
+            h₀_2,
+            h₀_3, 
             hill_length, 
             channel_width
         )
@@ -832,6 +850,8 @@ function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, winter_a
         hill_number = "_onehill_"
     elseif numhill == 2
         hill_number = "_twohill_"
+    elseif numhill == 3
+        hill_number = "_threehill"
     else
         hill_number = "_flat_"
     end
