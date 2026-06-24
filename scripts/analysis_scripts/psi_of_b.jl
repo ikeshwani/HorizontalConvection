@@ -1,150 +1,134 @@
+# psi_of_b.jl
+#
+# Overturning streamfunction in buoyancy space ψ(x,b,t) and physical space
+# ψ(x,z,t), via the SLOW per-bin masking method (get_ψb_mask).
+#
+# This is the reference / cross-check counterpart to psi_of_b_sort.jl (which uses
+# the fast sort + cumsum method).  Run both on the same experiment/segments and
+# compare the two psi_b_*.nc outputs to confirm the methods agree.
+#
+# Handles BOTH experiments — set `experiment` below ("control" or "hill").
+#
+# Thin script: get_ψb_mask / get_ψ physics live in
+# TopographicHorizontalConvection; this file loads segment data, calls them,
+# and writes the NetCDF.
+#
+# Run from scripts/ with:  julia --project=../ analysis_scripts/psi_of_b.jl
+
+using TopographicHorizontalConvection   # physics: get_ψb_mask, get_ψ
 using NCDatasets
-using CairoMakie
 using Printf
-using Interpolations
-using Statistics
-using NaNStatistics
 
-plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/RA1e8/4x_stretch/figures/"
+# ---- config ----
+experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
 
-ds = NCDataset("/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/combined_t385.nc")
+Ra_str   = "1e8"
+b_range  = (-1.0, 1.0)
+n_b_bins = 501
 
-b = ds["b"];
-χ = ds["chi"];
-u = ds["u"]
-x = ds["x_caa"][:]
-y = ds["y_aca"][:]
-z = ds["z_aac"][:]
-time = ds["time"][:]
+if experiment == "control"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
+    segments = 1:12
+    tag      = "Control"
+    source   = "Control/RA1e8/4x_stretch/512_128"
+elseif experiment == "hill"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
+    segments = 1:20
+    tag      = "3hill"
+    source   = "GRC/RA1e8/4x_stretch/512_128"
+else
+    error("unknown experiment: $experiment (use \"control\" or \"hill\")")
+end
 
-Nx, Ny, Nz = ds.attrib["Nx"], ds.attrib["Ny"], ds.attrib["Nz"]
+# distinct filename (..._mask_...) so it does not clobber the sort-method output
+outfile = joinpath(data_dir, "psi_b_mask_$(tag)_RA1e8_seg$(first(segments))to$(last(segments)).nc")
 
-Δx = reshape(ds["Δx_caa"][:], Nx, 1, 1)
-Δy = reshape(ds["Δy_aca"][:], 1, Ny, 1)
-Δz = reshape(ds["Δz_aac"][:], 1, 1, Nz)
+# ---- load grid info from seg1 ----
+println("loading grid info from seg1...")
+ds1    = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"))
+x      = ds1["x_caa"][:]
+y      = ds1["y_aca"][:]
+z      = ds1["z_aac"][:]
+Nx, Ny, Nz = ds1.attrib["Nx"], ds1.attrib["Ny"], ds1.attrib["Nz"]
+Δy_vec = ds1["Δy_aca"][:]
+Δz_vec = ds1["Δz_aac"][:]
+close(ds1)
 
-ΔV = Δx .* Δy .* Δz;
+# ---- load segments, deduplicating overlapping time steps ----
+println("loading b and u from segments $(segments)...")
+b_segs    = Vector{Array{Float32,4}}()
+u_segs    = Vector{Array{Float32,4}}()
+time_segs = Vector{Vector{Float64}}()
 
-#compute wet mask from the second time step (b=0 every intially so it would be wrong)
-wet = Array(b[:, :, :, 2]) .!= 0 # size [Nx, Ny, Nz]
+let t_last = -Inf
+    for s in segments
+        bfile = NCDataset(joinpath(data_dir, "buoyancy_seg$(s).nc"))
+        vfile = NCDataset(joinpath(data_dir, "velocities_seg$(s).nc"))
 
-b_range = (-1, 1)
+        t_seg = bfile["time"][:]
+        valid = findall(t_seg .> t_last)
 
-function get_ψb(u, b, wet, ds; b_range, n_b_bins = 501)
-    Nx, Ny, Nz = ds.attrib["Nx"], ds.attrib["Ny"], ds.attrib["Nz"]
+        if isempty(valid)
+            @printf("  seg %d: all %d steps are duplicates — skipping\n", s, length(t_seg))
+            close(bfile); close(vfile)
+            continue
+        end
 
-    Δy = reshape(ds["Δy_aca"][:], 1, Ny, 1, 1) #[Nx, Ny, Nz, Nt]
-    Δz = reshape(ds["Δz_aac"][:], 1, 1, Nz, 1) # [Nx, Ny, Nz, Nt]
-    Nt = size(u, 4)
-    b_min, b_max = b_range
-    b_bins = range(b_min, b_max, length=n_b_bins)
+        n_skip = valid[1] - 1
+        n_skip > 0 && @printf("  seg %d: skipping first %d overlapping step(s)\n", s, n_skip)
 
-    u_full = Array(u[1:Nx, 1:Ny, 1:Nz, :]) #[Nx, Ny, Nz, Nt]
-    b_full = Array(b[:, :, :, :])           #[Nx, Ny, Nz, Nt]
-    
-    #apply wet masks
-    wet4d = repeat(wet, outer=(1, 1, 1, Nt)) #[Nx, Ny, Nz, Nt]
-    u_full[.!wet4d] .= NaN
-    b_full[.!wet4d] .= NaN
+        n_v     = size(vfile["u"], 4)
+        t_range = valid[1]:min(valid[end], n_v)
+        push!(b_segs,    Array(bfile["b"][:, :, :, t_range]))
+        push!(u_segs,    Array(vfile["u"][1:Nx, :, :, t_range]))
+        push!(time_segs, t_seg[t_range])
 
-    #take mean of b overy y dim
-    ############# DONT TAKE THE MEAN 
-    #DEFINE MASK IN FOR LOOP HERE 
-    #IN THE MASK DEFINE ∫udy = nansum(u_full .* Δy .* M, dims=2)[:, 1, :, :]
-    # then weigh by dz and integrate in z coord in a separate line but still in the for loop 
-
-    # ψ(x, b, t) streamfunction in buoyancy space
-    ψ_b = zeros(Float32, Nx, n_b_bins, Nt) # [Nx, Nb, Nt]
-
-    for (i, b_0) in enumerate(b_bins)
-        #boolean mask : true for cells with b < b_0
-        M = b_full .< b_0 # has size [Nx, Ny, Nz, Nt]
-
-        # integrate u over y where b < b_0 -- now ∫udy will have size [Nx, Nz, Nt]
-        ∫udy = nansum(u_full .* Δy .* M, dims=2)[:, 1, :, :] #[Nx, Nz, Nt]
-
-        # now we integrate ∫udy over z so we get ψ = ∫udy dz and its in b space because we masked
-
-        ψ_b[:, i, :] = -nansum(∫udy .* reshape(ds["Δz_aac"][:], 1, Nz, 1), dims=2)[:, 1, :] #[Nx, Nt]
+        t_last = t_seg[valid[end]]
+        close(bfile); close(vfile)
+        @printf("  seg %d: loaded %d steps (t = %.2f → %.2f)\n", s, length(t_range), t_seg[valid[1]], t_last)
     end
-
-    return ψ_b, collect(b_bins)
 end
 
-ψ_b, b_out = get_ψb(u, b, wet, ds; b_range = b_range)
+b_all = cat(b_segs...; dims=4)
+u_all = cat(u_segs...; dims=4)
+time  = vcat(time_segs...)
+Nt    = length(time)
+println("total time steps: $Nt  (t = $(time[1]) → $(time[end]))")
 
+# ---- compute (physics from src/) ----
+println("computing ψ(x, b, t) with masking method...")
+ψ_b, b_bins = get_ψb_mask(b_all, u_all, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt;
+                          b_range=b_range, n_b_bins=n_b_bins)
 
-# function plot_ψ_snapshots(ψ_b, t, x, b)
+println("computing ψ(x, z, t)...")
+ψ = get_ψ(u_all, Δy_vec, Δz_vec, Nx, Nz, Nt)
 
-#     # find time indices closest to your target times
-#     target_times = [12, 25, 40, 55]
-#     t_indices    = [argmin(abs.(t .- τ)) for τ in target_times]
+# ---- save ----
+println("saving to $outfile ...")
+NCDataset(outfile, "c") do ds_out
+    defDim(ds_out, "x",    Nx)
+    defDim(ds_out, "b",    n_b_bins)
+    defDim(ds_out, "z",    Nz)
+    defDim(ds_out, "time", Nt)
 
-#     clim = maximum(abs.(filter(!isnan, vec(ψ_b))))
+    defVar(ds_out, "x",    x,      ("x",))
+    defVar(ds_out, "b",    b_bins, ("b",))
+    defVar(ds_out, "z",    z,      ("z",))
+    defVar(ds_out, "time", time,   ("time",))
 
-#     fig = Figure(size=(1200, 800))
+    v_ψb = defVar(ds_out, "psi_b", Float32, ("x", "b", "time"))
+    v_ψb[:, :, :] = ψ_b
+    v_ψb.attrib["long_name"] = "overturning streamfunction in buoyancy space ψ(x,b,t)"
+    v_ψb.attrib["units"]     = "m²/s"
 
-#     for (n, tidx) in enumerate(t_indices)
-#         row = (n - 1) ÷ 2 + 1
-#         col = (n - 1) % 2 + 1
+    v_ψ = defVar(ds_out, "psi", Float32, ("x", "z", "time"))
+    v_ψ[:, :, :] = ψ
+    v_ψ.attrib["long_name"] = "overturning streamfunction ψ(x,z,t)"
+    v_ψ.attrib["units"]     = "m²/s"
 
-#         ax = Axis(fig[row, col],
-#             title  = "ψ_b at t = $(round(t[tidx], digits=1))s",
-#             xlabel = "x",
-#             ylabel = "b"
-#         )
-
-#         ψ_snap = ψ_b[:, :, tidx]                        # [Nx, Nz]
-
-#         hm = heatmap!(ax, x, b, ψ_snap;
-#             colormap = :RdBu,
-#             colorrange = (-clim, clim)
-#         )
-#     end
-#     Colorbar(fig[1:2, 3], hm, label="ψ_b")
-
-#     return fig
-# end
-
-# @info("creating plot 1: surface buoyancy versus x at diff times")
-
-# fig3 = plot_ψ_snapshots(ψ_b, time, x, b_out)
-
-# save(joinpath(plot_dir, "psi_snapshots.png"), fig3)
-# @info(" saved psi_snapshots.png")
-
-output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
-
-out_path = joinpath(output_dir, "psi_b_t194_new.nc")
-
-NCDataset(out_path, "c") do ds_out
-    # define dimensions
-    defDim(ds_out, "x", Nx)
-    defDim(ds_out, "b",    length(b_out))
-    defDim(ds_out, "time", length(time))
-
-    v_x = defVar(ds_out, "x", Float64, ("x",))
-    v_x[:] = x
-    v_x.attrib["long_name"] = "x position"
-
-    # b_out
-    v_b = defVar(ds_out, "b_out", Float64, ("b",))
-    v_b[:] = b_out
-    v_b.attrib["long_name"] = "buoyancy bin centers"
-
-    # time
-    v_t = defVar(ds_out, "time", Float64, ("time",))
-    v_t[:] = time
-    v_t.attrib["long_name"] = "time"
-
-    # G_mix_all  [n_b_bins, Nt]
-    v_g = defVar(ds_out, "ψ_b", Float32, ("x", "b", "time"))
-    v_g[:, :, :] = ψ_b
-    v_g.attrib["long_name"] = "streamfunction in buoyancy space"
-
-    # optional: copy a few global attributes for provenance
-    ds_out.attrib["source_file"] = "combined_t194.nc"
-    ds_out.attrib["RA"]          = "1e8"
+    ds_out.attrib["Ra"]       = Ra_str
+    ds_out.attrib["source"]   = source
+    ds_out.attrib["segments"] = "$(first(segments)):$(last(segments))"
+    ds_out.attrib["method"]   = "mask"
 end
-
-println("saved → $out_path")
+println("saved → $outfile")

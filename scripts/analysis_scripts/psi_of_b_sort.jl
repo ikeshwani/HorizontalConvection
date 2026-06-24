@@ -1,7 +1,14 @@
 # psi_of_b_sort.jl
 #
 # Overturning streamfunction in buoyancy space ψ(x,b,t) and physical space
-# ψ(x,z,t) for the CONTROL experiment, via the sort + cumsum method.
+# ψ(x,z,t), via the sort + cumsum method.
+#
+# Handles BOTH experiments — set `experiment` below:
+#   "control" : flat bottom
+#   "hill"    : 3-hill GRC topography
+# The physics (get_ψb_sort / get_ψ) is geometry-agnostic: immersed cells under
+# the hills have u=0/b=0 and are masked out exactly like the (absent) dry cells
+# in the flat case, so the same functions serve both.
 #
 # Thin script: get_ψb_sort / get_ψ physics live in
 # TopographicHorizontalConvection; this file loads segment data, calls them,
@@ -14,12 +21,27 @@ using NCDatasets
 using Printf
 
 # ---- config ----
-data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
-outfile  = joinpath(data_dir, "psi_b_Control_RA1e8_seg1to12.nc")
+experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
 
-segments = 1:12
+Ra_str   = "1e8"
 b_range  = (-1.0, 1.0)
 n_b_bins = 501
+
+if experiment == "control"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
+    segments = 1:12
+    tag      = "Control"
+    source   = "Control/RA1e8/4x_stretch/512_128"
+elseif experiment == "hill"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
+    segments = 1:20
+    tag      = "3hill"
+    source   = "GRC/RA1e8/4x_stretch/512_128"
+else
+    error("unknown experiment: $experiment (use \"control\" or \"hill\")")
+end
+
+outfile = joinpath(data_dir, "psi_b_$(tag)_RA1e8_seg$(first(segments))to$(last(segments)).nc")
 
 # ---- load grid info from seg1 ----
 println("loading grid info from seg1...")
@@ -104,8 +126,8 @@ NCDataset(outfile, "c") do ds_out
     v_ψ.attrib["long_name"] = "overturning streamfunction ψ(x,z,t)"
     v_ψ.attrib["units"]     = "m²/s"
 
-    ds_out.attrib["Ra"]      = "1e8"
-    ds_out.attrib["source"]  = "Control/RA1e8/4x_stretch/512_128"
-    ds_out.attrib["segments"] = "1:12"
+    ds_out.attrib["Ra"]       = Ra_str
+    ds_out.attrib["source"]   = source
+    ds_out.attrib["segments"] = "$(first(segments)):$(last(segments))"
 end
 println("saved → $outfile")

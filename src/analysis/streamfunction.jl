@@ -2,7 +2,8 @@
 #
 # Overturning streamfunction diagnostics.
 #   - get_ψ      : ψ(x, z, t) in physical space, ψ = -∫∫ u dy dz (cumulative in z)
-#   - get_ψb_sort: ψ(x, b, t) in buoyancy space via a sort + cumsum sweep
+#   - get_ψb_sort: ψ(x, b, t) in buoyancy space via a sort + cumsum sweep (fast)
+#   - get_ψb_mask: ψ(x, b, t) via per-bin boolean masking (slow reference method)
 #
 # Physics only — no plotting.
 
@@ -10,7 +11,7 @@ using NCDatasets
 using NaNStatistics
 using Printf
 
-export get_ψ, get_ψb_sort
+export get_ψ, get_ψb_sort, get_ψb_mask
 
 # ---- ψ(x, z, t) overturning streamfunction in physical space ----
 #
@@ -74,6 +75,33 @@ function get_ψb_sort(b_all, u_all, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt;
             end
         end
         t % 50 == 0 && @printf("  t = %d / %d\n", t, Nt)
+    end
+
+    return ψ_b, b_bins
+end
+
+# ---- ψ(x, b, t) via per-bin boolean masking (slow reference method) ----
+#
+# Direct definition: for each buoyancy level b₀, build a boolean mask of the
+# cells with b < b₀, integrate u over y, then over z:
+#   ψ(x, b₀, t) = -∫∫_{b < b₀} u dy dz.
+# The mask is rebuilt for every one of the n_b_bins levels, making this
+# O(n_b_bins · Ny · Nz) — far slower than get_ψb_sort, but a useful independent
+# check that the sort method gives the same answer.  Immersed cells carry u=0
+# and so contribute nothing, exactly as in the sort method (no wet mask needed).
+function get_ψb_mask(b_all, u_all, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt;
+                     b_range=(-1.0, 1.0), n_b_bins=501)
+
+    b_bins = collect(range(b_range[1], b_range[2], length=n_b_bins))
+    Δy4 = reshape(Δy_vec, 1, Ny, 1, 1)
+    Δz3 = reshape(Δz_vec, 1, Nz, 1)
+
+    ψ_b = zeros(Float32, Nx, n_b_bins, Nt)
+
+    for (i, b_0) in enumerate(b_bins)
+        M    = b_all .< b_0                                    # [Nx, Ny, Nz, Nt]
+        ∫udy = nansum(u_all .* Δy4 .* M, dims=2)[:, 1, :, :]   # [Nx, Nz, Nt]
+        ψ_b[:, i, :] = -nansum(∫udy .* Δz3, dims=2)[:, 1, :]   # [Nx, Nt]
     end
 
     return ψ_b, b_bins
