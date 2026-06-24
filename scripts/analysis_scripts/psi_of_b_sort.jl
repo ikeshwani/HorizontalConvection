@@ -1,12 +1,25 @@
+# psi_of_b_sort.jl
+#
+# Overturning streamfunction in buoyancy space ψ(x,b,t) and physical space
+# ψ(x,z,t) for the CONTROL experiment, via the sort + cumsum method.
+#
+# Thin script: get_ψb_sort / get_ψ physics live in
+# TopographicHorizontalConvection; this file loads segment data, calls them,
+# and writes the NetCDF.
+#
+# Run from scripts/ with:  julia --project=../ analysis_scripts/psi_of_b_sort.jl
+
+using TopographicHorizontalConvection   # physics: get_ψb_sort, get_ψ
 using NCDatasets
 using Printf
-using NaNStatistics
 
-# ---- paths ----
+# ---- config ----
 data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
 outfile  = joinpath(data_dir, "psi_b_Control_RA1e8_seg1to12.nc")
 
 segments = 1:12
+b_range  = (-1.0, 1.0)
+n_b_bins = 501
 
 # ---- load grid info from seg1 ----
 println("loading grid info from seg1...")
@@ -60,63 +73,7 @@ time  = vcat(time_segs...)
 Nt    = length(time)
 println("total time steps: $Nt  (t = $(time[1]) → $(time[end]))")
 
-# ---- ψ(x, b, t) via sort + cumsum ----
-#
-# For each x-column at time t, ψ(x, b₀, t) = -∫∫_{b < b₀} u dy dz.
-# Instead of rebuilding a boolean mask for each of the n_b_bins buoyancy
-# levels (the old approach), we:
-#   1. sort the Ny*Nz cells in the column by their buoyancy value,
-#   2. compute a cumulative sum of u·Δy·Δz in that sorted order,
-#   3. sweep a two-pointer through the sorted b array once to evaluate all
-#      bins in O(Ny·Nz + n_b_bins) rather than O(n_b_bins · Ny · Nz).
-#
-function get_ψb_sort(b_all, u_all, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt;
-                     b_range=(-1.0, 1.0), n_b_bins=501)
-
-    b_bins = collect(range(b_range[1], b_range[2], length=n_b_bins))
-    W      = reshape(Δy_vec, Ny, 1) .* reshape(Δz_vec, 1, Nz)  # [Ny, Nz]
-
-    ψ_b = zeros(Float32, Nx, n_b_bins, Nt)
-
-    for t in 1:Nt
-        for i in 1:Nx
-            b_col  = vec(b_all[i, :, :, t])
-            uw_col = vec(u_all[i, :, :, t] .* W)
-
-            perm     = sortperm(b_col)
-            b_sorted = b_col[perm]
-            cum_uw   = cumsum(uw_col[perm])
-            n_col    = length(b_sorted)
-
-            # two-pointer sweep: b_bins is already sorted so j only advances
-            j = 0
-            for k in 1:n_b_bins
-                while j < n_col && b_sorted[j + 1] < b_bins[k]
-                    j += 1
-                end
-                ψ_b[i, k, t] = j > 0 ? Float32(-cum_uw[j]) : 0.0f0
-            end
-        end
-        t % 50 == 0 && @printf("  t = %d / %d\n", t, Nt)
-    end
-
-    return ψ_b, b_bins
-end
-
-# ---- ψ(x, z, t) overturning streamfunction in physical space ----
-function get_ψ(u_all, Δy_vec, Δz_vec, Nx, Nz, Nt)
-    u_work = copy(u_all)
-    u_work[u_work .== 0] .= NaN
-    ∫udy   = dropdims(nansum(u_work .* reshape(Δy_vec, 1, :, 1, 1), dims=2), dims=2)
-    ∫udy_w = ∫udy .* reshape(Δz_vec, 1, Nz, 1)
-    ∫udy_w[isnan.(∫udy_w)] .= 0
-    return Float32.(-cumsum(∫udy_w, dims=2))
-end
-
-# ---- compute ----
-b_range  = (-1.0, 1.0)
-n_b_bins = 501
-
+# ---- compute (physics from src/) ----
 println("computing ψ(x, b, t) with sort method...")
 ψ_b, b_bins = get_ψb_sort(b_all, u_all, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt;
                            b_range=b_range, n_b_bins=n_b_bins)
