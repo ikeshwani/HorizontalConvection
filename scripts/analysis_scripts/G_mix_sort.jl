@@ -1,7 +1,14 @@
 # G_mix_sort.jl
 #
-# Regional G_mix(b,t) + overturning streamfunction for the CONTROL (flat-bottom)
-# experiment, via the sorting method.
+# Regional G_mix(b,t) + overturning streamfunction via the SORTED-BINNING
+# estimator (G_mix_calc: sort cells by buoyancy, cumulative ∫χ·dV, then
+# 0.5·d²/db²).
+#
+# Handles BOTH experiments — set `experiment` below:
+#   "control" : flat bottom (all cells wet)
+#   "hill"    : 3-hill GRC topography (wet mask from immersed boundary)
+# The region masks and G_mix physics are geometry-agnostic; only the data path,
+# segment range, and wet mask differ between the two.
 #
 # Thin script: physics (gaussian_smooth, G_mix_calc, get_ψ, region builders,
 # save_gmix_regions) lives in TopographicHorizontalConvection; this file just
@@ -16,15 +23,28 @@ using Printf
 using NaNStatistics
 
 # ---- config ----
-data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
-plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/Control/RA1e8/4x_stretch/figures/"
-outfile  = joinpath(data_dir, "Gmix_regions_Control_RA1e8_seglast.nc")
-mkpath(plot_dir)
+experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
 
-segments = 9:10
 Ra       = 1e8
 b_range  = (-1, 1)
 n_b_bins = 501
+
+if experiment == "control"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
+    plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/Control/RA1e8/4x_stretch/figures/"
+    segments = 1:12
+    tag      = "Control"
+elseif experiment == "hill"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
+    plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/RA1e8/4x_stretch/figures/"
+    segments = 1:19
+    tag      = "3hill"
+else
+    error("unknown experiment: $experiment (use \"control\" or \"hill\")")
+end
+mkpath(plot_dir)
+
+outfile = joinpath(data_dir, "Gmix_regions_$(tag)_RA1e8_seg$(first(segments))to$(last(segments)).nc")
 
 # ---- load grid info from seg1 ----
 ds1    = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"))
@@ -36,6 +56,10 @@ Lx     = ds1.attrib["Lx"]
 Δx_vec = ds1["Δx_caa"][:]
 Δy_vec = ds1["Δy_aca"][:]
 Δz_vec = ds1["Δz_aac"][:]
+
+# wet mask: flat-bottom control has no immersed boundary (all wet); hills are
+# b==0, so read the wet mask from the second time step (avoids init zeros).
+wet = experiment == "hill" ? (Array(ds1["b"][:, :, :, 2]) .!= 0) : trues(Nx, Ny, Nz)
 close(ds1)
 
 Δx = reshape(Δx_vec, Nx, 1, 1)
@@ -89,9 +113,6 @@ time  = vcat(time_segs...)
 Nt    = length(time)
 println("total time steps: $Nt  (t = $(time[1]) → $(time[end]))")
 
-# flat-bottom (Control) has no immersed boundary so all cells are wet
-wet = trues(Nx, Ny, Nz)
-
 # ---- region precompute (physics from src/) ----
 region_masks   = gmix_region_masks(x, z, Lx, Ra)
 region_precomp = precompute_regions(region_masks, ΔA_2d, wet)
@@ -124,7 +145,7 @@ println("computing streamfunction ψ...")
 save_gmix_regions(outfile, b_out, time, Gmix_regions, region_precomp, ψ, x, z)
 
 # ---- plot ----
-function plot_gmix_regions(b_out, time, Gmix_regions, region_precomp, plot_dir)
+function plot_gmix_regions(b_out, time, Gmix_regions, region_precomp, plot_dir, figname)
     names     = [r.name for r in region_precomp]
     n_regions = length(names)
     fig  = Figure(size=(300 * n_regions, 400))
@@ -134,10 +155,10 @@ function plot_gmix_regions(b_out, time, Gmix_regions, region_precomp, plot_dir)
         hm = heatmap!(ax, time, b_out, Gmix_regions[name]', colormap=:balance, colorrange=(-clim, clim))
         Colorbar(fig[1, 2i], hm)
     end
-    figname = "Gmix_density_regions_Control_RA1e8_seg1to10.png"
     save(joinpath(plot_dir, figname), fig)
     println("saved figure → $(joinpath(plot_dir, figname))")
     return fig
 end
 
-fig = plot_gmix_regions(b_out, time, Gmix_regions, region_precomp, plot_dir)
+figname = "Gmix_density_regions_$(tag)_RA1e8_seg$(first(segments))to$(last(segments)).png"
+fig = plot_gmix_regions(b_out, time, Gmix_regions, region_precomp, plot_dir, figname)
