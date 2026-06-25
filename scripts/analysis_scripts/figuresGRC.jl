@@ -29,12 +29,6 @@ ctrl_gmix_file = joinpath(ctrl_data_dir, "Gmix_regions_Control_RA1e8_seg1to12.nc
 plot_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/$(experiment)/$(Ra_str)/$(stretch_str)/figures/"
 mkpath(plot_dir)
 
-# b loading strategy:
-#   use_combined = true  → single combined_t<T>.nc file (faster, one open)
-#   use_combined = false → loop through individual segment files
-use_combined  = true
-combined_file = joinpath(data_dir, "combined_t385.nc")
-
 # =========================================================
 # grid metadata
 # =========================================================
@@ -91,47 +85,36 @@ end
 
 # =========================================================
 # load b — y- and time-averaged over last avg_window time units
+# (loops segment files, deduplicating overlapping steps)
 # =========================================================
-b_mean = if use_combined
-    println("loading b from combined file...")
-    ds_c  = NCDataset(combined_file)
-    t_c   = ds_c["time"][:]
-    i_c   = searchsortedfirst(t_c, t_end - avg_window):length(t_c)
-    b_slice = Float64.(ds_c["b"][:, :, :, i_c])          # [Nx, Ny, Nz, n]
-    close(ds_c)
-    @printf("b: averaged over %d steps × %d y-levels (combined file)\n", length(i_c), Ny)
-    Float32.(dropdims(mean(b_slice, dims=(2, 4)), dims=(2, 4)))
+b_mean = let
+    println("loading b from segments...")
+    b_sum  = zeros(Float64, Nx, Nz)
+    n_tavg = 0
+    t_last = -Inf
 
-else
-    let
-        println("loading b from segments...")
-        b_sum  = zeros(Float64, Nx, Nz)
-        n_tavg = 0
-        t_last = -Inf
+    for s in seg_range
+        bfile  = NCDataset(joinpath(data_dir, "buoyancy_seg$(s).nc"))
+        t_seg  = bfile["time"][:]
+        valid  = findall(t_seg .> t_last)
+        isempty(valid) && (close(bfile); continue)
 
-        for s in seg_range
-            bfile  = NCDataset(joinpath(data_dir, "buoyancy_seg$(s).nc"))
-            t_seg  = bfile["time"][:]
-            valid  = findall(t_seg .> t_last)
-            isempty(valid) && (close(bfile); continue)
+        t_range = valid[1]:valid[end]
+        t_last  = t_seg[t_range[end]]
 
-            t_range = valid[1]:valid[end]
-            t_last  = t_seg[t_range[end]]
-
-            in_win = findall(t_seg[t_range] .>= t_end - avg_window)
-            if !isempty(in_win)
-                t_win   = t_range[in_win[1]:in_win[end]]
-                b_chunk = Float64.(bfile["b"][:, :, :, t_win])  # [Nx, Ny, Nz, n]
-                b_sum  .+= dropdims(sum(b_chunk, dims=(2, 4)), dims=(2, 4))
-                n_tavg += length(t_win) * Ny
-            end
-            close(bfile)
+        in_win = findall(t_seg[t_range] .>= t_end - avg_window)
+        if !isempty(in_win)
+            t_win   = t_range[in_win[1]:in_win[end]]
+            b_chunk = Float64.(bfile["b"][:, :, :, t_win])  # [Nx, Ny, Nz, n]
+            b_sum  .+= dropdims(sum(b_chunk, dims=(2, 4)), dims=(2, 4))
+            n_tavg += length(t_win) * Ny
         end
-
-        n_tavg == 0 && error("no b time steps found in averaging window (t ≥ $(t_end - avg_window))")
-        @printf("b: averaged over %d time steps × %d y-levels (segments)\n", n_tavg ÷ Ny, Ny)
-        Float32.(b_sum ./ n_tavg)
+        close(bfile)
     end
+
+    n_tavg == 0 && error("no b time steps found in averaging window (t ≥ $(t_end - avg_window))")
+    @printf("b: averaged over %d time steps × %d y-levels (segments)\n", n_tavg ÷ Ny, Ny)
+    Float32.(b_sum ./ n_tavg)
 end   # [Nx, Nz]
 
 # =========================================================
