@@ -1,3 +1,4 @@
+using TopographicHorizontalConvection   # physics: seafloor_profile, boundary_layer_depth
 using NCDatasets
 using NaNStatistics
 using CairoMakie
@@ -52,7 +53,7 @@ close(ds1)
 # =========================================================
 # region boundaries
 # =========================================================
-zBL      = -(round(Lx * Ra^(-1/5); digits=2) + 0.02)
+zBL      = boundary_layer_depth(Lx, Ra)
 x_plume  = -1.8                                        # plume / rest-of-domain boundary
 x_sub_BL = [-1.35, -0.65, -0.35, 0.35, 0.65, 1.35]   # sub-BL region x-boundaries
 
@@ -62,14 +63,6 @@ z_frac_BL = (zBL - z[1]) / (z[end] - z[1])
 # =========================================================
 # analytic seafloor profile (flat for Control; Gaussian hills otherwise)
 # =========================================================
-function seafloor_profile(x, H, Lx, h₀_frac, numhill)
-    h₀ = h₀_frac * H
-    hl = Lx / 32
-    h1 = numhill >= 1 ? h₀      .* exp.(-(x .+ Lx/4).^2 ./ (2hl^2)) : zeros(length(x))
-    h2 = numhill >= 2 ? 0.75h₀  .* exp.(-(x        ).^2 ./ (2hl^2)) : zeros(length(x))
-    h3 = numhill >= 3 ? 0.5h₀   .* exp.(-(x .- Lx/4).^2 ./ (2hl^2)) : zeros(length(x))
-    return -H .+ h1 .+ h2 .+ h3
-end
 z_sf = seafloor_profile(x, H, Lx, h₀_frac, numhill)
 
 # =========================================================
