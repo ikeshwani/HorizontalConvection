@@ -1,3 +1,4 @@
+using TopographicHorizontalConvection   # physics: load_psib_tavg, nearest_xi
 using NCDatasets
 using CairoMakie
 using Printf
@@ -29,33 +30,11 @@ close(ds_tmp)
 t_start  = t_end - avg_window
 @printf("shared averaging window: t = %.2f → %.2f\n", t_start, t_end)
 
-# ---- loader: returns (x, b, ψ_b_tavg[Nx, Nb]) ----
-# handles both naming conventions:
-#   control: psi_b variable, b coordinate
-#   hill:    ψ_b  variable, b_out coordinate
-function load_psib_tavg(file, t_start, t_end)
-    ds    = NCDataset(file)
-    x     = Float64.(ds["x"][:])
-    b_key = haskey(ds, "b") ? "b" : "b_out"
-    ψ_key = haskey(ds, "psi_b") ? "psi_b" : "ψ_b"
-    b     = Float64.(ds[b_key][:])
-    time  = Float64.(ds["time"][:])
-    idx   = findall((time .>= t_start) .& (time .<= t_end))
-    isempty(idx) && error("no time steps in window [$t_start, $t_end] in $file")
-    @printf("  %s: averaging %d steps (t = %.2f → %.2f)\n",
-            basename(file), length(idx), time[idx[1]], time[idx[end]])
-    ψ_mean = dropdims(mean(Float64.(ds[ψ_key][:, :, idx[1]:idx[end]]), dims=3), dims=3)
-    close(ds)
-    return x, b, ψ_mean
-end
-
 println("loading hill psi_b...")
 x_h, b_h, ψ_h = load_psib_tavg(hill_psib_file, t_start, t_end)
 
 println("loading control psi_b...")
 x_c, b_c, ψ_c = load_psib_tavg(ctrl_psib_file, t_start, t_end)
-
-nearest_xi(x, xv) = argmin(abs.(x .- xv))
 
 # ---- figure builder ----
 function make_fig(x, b, ψ, regions, fig_title, fname)

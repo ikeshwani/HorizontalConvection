@@ -1,3 +1,4 @@
+using TopographicHorizontalConvection   # physics: boundary_layer_depth, nearest_xi
 using NCDatasets
 using CairoMakie
 using Statistics
@@ -28,7 +29,7 @@ ds1 = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"))
 Lx  = Float64(ds1.attrib["Lx"])
 Ra  = Float64(ds1.attrib["Ra"])
 close(ds1)
-zBL = -(round(Lx * Ra^(-1/5); digits=2) + 0.02)
+zBL = boundary_layer_depth(Lx, Ra)
 
 # =========================================================
 # shared t_end: anchor to control's last time so both
@@ -108,8 +109,6 @@ regions = [
     ("Basin 3", "Gmix_basin3",  1.35,  x_psi[end]),
 ]
 n_reg = length(regions)   # 6
-
-nearest_xi(xv, xt) = argmin(abs.(xv .- xt))
 
 # align ψ to the 499-bin b_g grid (same as G_mix b-axis)
 ψ_inner      = ψ_mean[:, 2:end-1]        # [Nx, 499]  hill

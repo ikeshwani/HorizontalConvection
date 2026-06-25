@@ -1,3 +1,4 @@
+using TopographicHorizontalConvection   # physics: seafloor_profile, boundary_layer_depth, load_chi_eps_mean
 using NCDatasets, CairoMakie, Statistics, Printf
 
 avg_window = 30.0
@@ -16,43 +17,6 @@ experiments = [
      numhill   = 3,
      h₀_frac   = 0.5),
 ]
-
-function seafloor_profile(x, H, Lx, h₀_frac, numhill)
-    h₀ = h₀_frac * H
-    hl = Lx / 32
-    h1 = numhill >= 1 ? h₀     .* exp.(-(x .+ Lx/4).^2 ./ (2hl^2)) : zeros(length(x))
-    h2 = numhill >= 2 ? 0.75h₀ .* exp.(-(x       ).^2 ./ (2hl^2)) : zeros(length(x))
-    h3 = numhill >= 3 ? 0.5h₀  .* exp.(-(x .- Lx/4).^2 ./ (2hl^2)) : zeros(length(x))
-    return -H .+ h1 .+ h2 .+ h3
-end
-
-function load_chi_eps_mean(data_dir, seg_range, avg_window, t_end, Nx, Ny, Nz)
-    chi_sum = zeros(Float64, Nx, Ny, Nz)
-    eps_sum = zeros(Float64, Nx, Ny, Nz)
-    n = 0
-    t_last = -Inf
-    for s in seg_range
-        ofile = joinpath(data_dir, "oceanostics_seg$(s).nc")
-        isfile(ofile) || continue
-        ds = NCDataset(ofile)
-        t_seg = Float64.(ds["time"][:])
-        valid = findall(t_seg .> t_last)
-        isempty(valid) && (close(ds); continue)
-        t_range = valid[1]:valid[end]
-        t_last  = t_seg[t_range[end]]
-        in_win  = findall(t_seg[t_range] .>= t_end - avg_window)
-        if !isempty(in_win)
-            t_win = t_range[in_win[1]:in_win[end]]
-            chi_sum .+= dropdims(sum(Float64.(ds["χ"][:, :, :, t_win]), dims=4), dims=4)
-            eps_sum .+= dropdims(sum(Float64.(ds["ε"][:, :, :, t_win]), dims=4), dims=4)
-            n += length(t_win)
-        end
-        close(ds)
-    end
-    n == 0 && error("no oceanostics steps found in averaging window")
-    @printf("  χ,ε: averaged over %d steps\n", n)
-    return chi_sum ./ n, eps_sum ./ n
-end
 
 # ── t_end taken from control (first experiment) so all windows align ──────────
 t_end = let ctrl = experiments[1]
@@ -86,7 +50,7 @@ for exp in experiments
     Δz_vec = Float64.(ds1["Δz_aac"][:])
     close(ds1)
 
-    zBL     = -(round(Lx * Ra^(-1/5); digits=2) + 0.02)
+    zBL     = boundary_layer_depth(Lx, Ra)
     x_plume = -1.8
     z_sf    = seafloor_profile(x, H, Lx, exp.h₀_frac, exp.numhill)
 
