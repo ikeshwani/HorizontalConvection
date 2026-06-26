@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name="GRC-4xRa8-flat"             ## Name of the job.
-#SBATCH --output="/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/output_message.%j.out"             ##output file
+#SBATCH --output="/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/logs/output_message.%j.out"             ##output file
 #SBATCH --partition=gpuA40x4
 #SBATCH --mem=36G
 #SBATCH --nodes=1                 ## (-N) number of nodes to use
@@ -22,4 +22,4 @@ module load cudatoolkit #remove for cpu run
 # module load julia/1.10.10
 
 cd /work/hdd/bfxn/ikeshwani/HorizontalConvection/scripts
-julia --project=../ job_scripts/run_no_hill_GRC.jl
+julia --project=../ job_scripts/run_4xRa8_flat.jl

@@ -10,7 +10,7 @@ module TopographicHorizontalConvection
     include("analysis/regions.jl")
     include("analysis/io_utils.jl")
     include("grid_testing.jl")
-    include("RANS_energies.jl")
+    include("analysis/RANS_energies.jl")
 end
 
 #print the julia version in the scripts so we know which version is loaded

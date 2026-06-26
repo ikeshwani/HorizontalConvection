@@ -1,6 +1,4 @@
-println("Running Ra1e5 4x stretching simulation from from t=1 to t=2, segment=2 and b_init=0")
-#we change the stop time to 2.0 seconds, so that i can control when the sim time is over rather than
-
+println(">>> starting run case comparison to bryden and nurser topography : for Ra1e6 4x stretching segment 9,stoptime=133 <<<")
 
 using CUDA
 using Oceananigans
@@ -9,20 +7,20 @@ using TopographicHorizontalConvection:HorizontalConvectionSimulation
 simulation = HorizontalConvectionSimulation(;
                    #domain parameters
     Nx = 512, 
-    Ny = 256,
+    Ny = 32,
     Nz = 128, 
-    H = 2.0, 
+    H = 1.0, 
     α = 4.0,
-    x_stretch = 4.0,   #4x stretch
-    z_stretch = 4.0,   #4x stretch
-    stop_time = 1.0,
+    x_stretch = 4.0,   # 4x stretch
+    z_stretch = 4.0,   # 4x stretch
+    stop_time = 133.0,
 
     #topography parameters
-    h₀_frac = 0.0, 
-    numhill = 0, 
+    h₀_frac = 0.5, 
+    numhill = 3, 
 
     #physics parameters
-    Ra = 1e5,
+    Ra = 1e6,
     Pr = 1.0, 
     b★ = 1.0, 
     advection = true, 
@@ -55,16 +53,12 @@ simulation = HorizontalConvectionSimulation(;
 
     #output parameters
     output_writer = true,
-    output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/chapter1/RA1e5/4x_stretch/",
-    segment = 2, 
+    output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/",
+    segment = 9, 
 
     #computational parameters
     architecture = GPU()
     )
 
-run!(simulation, pickup=false)
+run!(simulation, pickup=true)
 
-# save final checkpoint immediately after run completes
-# @info "Run complete at t=$(time(simulation.model)), saving final checkpoint..."
-# write_output!(simulation.output_writers[:checkpointer], simulation.model)
-# @info "Final checkpoint saved."

@@ -2,7 +2,6 @@ using Oceananigans
 using Printf
 using NaNStatistics
 using NCDatasets
-using CairoMakie
 
 # the goal of this notebook is to write functions that can 
 # 1. reynolds average any variable

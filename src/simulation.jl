@@ -25,6 +25,8 @@ using Oceananigans.BuoyancyFormulations: Zᶜᶜᶜ
 using Oceanostics
 using CUDA
 using Adapt
+using TOML
+using Dates
 
 # helper functions for potential energy
 
@@ -730,9 +732,11 @@ function setup_output_writers!(simulation, domain, physics, forcing,
         "Nz" => domain.Nz
     )
 
-    #create output directory
-    grid_label = "$(domain.Nx)_$(domain.Nz)"
-    project_dir = joinpath(output_config.base_dir, grid_label)
+    #create output directory: one self-contained folder per run, named by the
+    #run prefix.  An empty figures/ subfolder is created once per run (project_dir
+    #has no segment in it, so this is per-run, not per-segment).
+    project_dir = joinpath(output_config.base_dir, filename_prefix)
+    mkpath(joinpath(project_dir, "figures"))
 
     # section indices for 2D slices
     indices = domain.Ny == 1 ? (:,1,:) : (:, domain.Ny÷2, :)
@@ -816,47 +820,106 @@ end
 
 # filename generator 
 
-function generate_filename(advection::Bool, coriolis::Bool, wind::Bool, winter_amplitude::Float64, summer_amplitude::Float64, numhill::Int, h₀_frac::Float64,
+function generate_filename(advection::Bool, coriolis::Bool, wind::Bool,
+                            winter_amplitude::Float64, summer_amplitude::Float64,
+                            numhill::Int, h₀_frac::Float64, x_stretch::Float64,
                             Ra::Float64, b_init::Float64)
     """
-    Generates filename prefix describing the simulation input
+    Build the run-folder / checkpoint prefix from the headline parameters:
+        ra<Ra>_<stretch>xstretch_<topo>_<forcing>_<start>
+    e.g. ra1e8_4xstretch_threehill_baseforcing_zerostart
+
+    The full configuration (runtype, h₀_frac, grid size, etc.) is recorded in the
+    per-run config.toml — only the headline parameters appear in the folder name.
     """
-    runtype = advection ? "turbulent" : "diffusive"
+    # Ra → compact scientific, e.g. 1e8, 1e6, 5e6
+    ra_str = replace(@sprintf("%.0e", Ra), "e+0" => "e", "e+" => "e", "e-0" => "e-")
 
-    rotation = coriolis ? "_rotating" : nothing
+    # stretch ratio → integer when whole (4.0 → "4")
+    stretch_str = isinteger(x_stretch) ? string(Int(x_stretch)) : string(x_stretch)
 
-    external_wind = wind ? "_wind_forced" : nothing
-
-    if winter_amplitude == 0.0
-        b_time = "_summeronly"
-    elseif summer_amplitude == 0.0
-        b_time = "_winteronly"
-    elseif winter_amplitude != 0.0 && summer_amplitude != 0.0
-        b_time = "_seasonal"
-    else
-        b_time = nothing
-    end
-
-
-    if b_init < 0.0
-        starttype = "_coldstart"
-    elseif b_init > 0.0
-        starttype = "_warmstart"
-    else
-        starttype = "_zerostart"
-    end
-
-    if numhill == 1
-        hill_number = "_onehill_"
+    # topography
+    topo = if numhill == 1
+        "onehill"
     elseif numhill == 2
-        hill_number = "_twohill_"
+        "twohill"
     elseif numhill == 3
-        hill_number = "_threehill"
+        "threehill"
     else
-        hill_number = "_flat_"
+        "flat"
     end
 
-    return string(runtype, rotation, external_wind, b_time, hill_number, h₀_frac, "_Ra", Ra, starttype)
+    # forcing: base case = no wind, no rotation, no seasonal cycle
+    if !wind && !coriolis && winter_amplitude == 0.0 && summer_amplitude == 0.0
+        forcing = "baseforcing"
+    else
+        mods = String[]
+        coriolis && push!(mods, "rotating")
+        wind && push!(mods, "windforced")
+        (winter_amplitude != 0.0 || summer_amplitude != 0.0) && push!(mods, "seasonal")
+        forcing = join(mods, "_")
+    end
+
+    # initial condition
+    start = b_init < 0.0 ? "coldstart" : (b_init > 0.0 ? "warmstart" : "zerostart")
+
+    return string("ra", ra_str, "_", stretch_str, "xstretch_", topo, "_", forcing, "_", start)
+end
+
+function write_run_config(project_dir, run_name; Ra, Pr, b★, ν, κ, advection,
+                          Nx, Ny, Nz, H, α, Lx, Ly, x_stretch, z_stretch,
+                          numhill, h₀_frac, b_init, winter_amplitude,
+                          summer_amplitude, seasonal_period, wind, coriolis,
+                          migrated::Bool=false)
+    """
+    Write a per-run config.toml documenting the full configuration + provenance
+    (git SHA, date, Julia version) for reproducibility.  Only writes if the file
+    does not already exist, so segment pickups don't clobber the original
+    provenance.  `migrated=true` flags a config reconstructed after the fact for a
+    pre-existing run (its git_sha/date are the migration's, not the run's).
+    """
+    config_path = joinpath(project_dir, "config.toml")
+    isfile(config_path) && return config_path
+    mkpath(project_dir)
+
+    git_sha = try
+        readchomp(`git -C $(@__DIR__) rev-parse --short HEAD`)
+    catch
+        "unknown"
+    end
+
+    config = Dict(
+        "run" => Dict("name" => run_name),
+        "physics" => Dict(
+            "Ra" => Ra, "Pr" => Pr, "b_star" => b★,
+            "nu" => ν, "kappa" => κ, "advection" => advection,
+        ),
+        "domain" => Dict(
+            "Nx" => Nx, "Ny" => Ny, "Nz" => Nz,
+            "H" => H, "alpha" => α, "Lx" => Lx, "Ly" => Ly,
+            "x_stretch" => x_stretch, "z_stretch" => z_stretch,
+        ),
+        "topography" => Dict("numhill" => numhill, "h0_frac" => h₀_frac),
+        "forcing" => Dict(
+            "b_init" => b_init,
+            "winter_amplitude" => winter_amplitude,
+            "summer_amplitude" => summer_amplitude,
+            "seasonal_period" => seasonal_period,
+            "wind" => wind, "coriolis" => coriolis,
+        ),
+        "provenance" => Dict(
+            "git_sha" => git_sha,
+            "date" => string(Dates.today()),
+            "julia_version" => string(VERSION),
+            "migrated" => migrated,
+        ),
+    )
+
+    open(config_path, "w") do io
+        TOML.print(io, config)
+    end
+    @info "wrote run config → $config_path"
+    return config_path
 end
 
 ######## MAIN SIMULATION Function
@@ -1130,18 +1193,30 @@ function HorizontalConvectionSimulation(;
     simulation.callbacks[:progress] = Callback(progress, IterationInterval(10))
 
     # step 12. setup the output writers
-    filename_prefix = generate_filename(advection, coriolis, wind, winter_amplitude, summer_amplitude, numhill, h₀_frac, Ra, b_init)
+    filename_prefix = generate_filename(advection, coriolis, wind, winter_amplitude, summer_amplitude, numhill, h₀_frac, x_stretch, Ra, b_init)
     output_config = OutputConfig(
-        enabled = output_writer, 
-        base_dir = output_dir, 
+        enabled = output_writer,
+        base_dir = output_dir,
         time_interval_fraction = 6000.0
     )
 
     setup_output_writers!(
-        simulation, domain, physics, forcing, 
-        output_config, filename_prefix, numhill, h₀_frac, b_init, 
+        simulation, domain, physics, forcing,
+        output_config, filename_prefix, numhill, h₀_frac, b_init,
         segment
     )
+
+    # step 13. write a per-run config.toml (full params + provenance) for reproducibility
+    if output_writer
+        project_dir = joinpath(output_dir, filename_prefix)
+        write_run_config(project_dir, filename_prefix;
+            Ra=Ra, Pr=Pr, b★=b★, ν=physics.ν, κ=physics.κ, advection=advection,
+            Nx=Nx, Ny=Ny, Nz=Nz, H=H, α=α, Lx=domain.Lx, Ly=domain.Ly,
+            x_stretch=x_stretch, z_stretch=z_stretch,
+            numhill=numhill, h₀_frac=h₀_frac, b_init=b_init,
+            winter_amplitude=winter_amplitude, summer_amplitude=summer_amplitude,
+            seasonal_period=seasonal_period, wind=wind, coriolis=coriolis)
+    end
 
     return simulation
 end
