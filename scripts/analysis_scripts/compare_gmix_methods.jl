@@ -46,8 +46,8 @@ using Statistics
 using NaNStatistics
 
 # ---- config ----
-data_dir    = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
-fig_dir     = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/RA1e8/4x_stretch/figures/"
+data_dir    = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
+fig_dir     = joinpath(data_dir, "figures")
 segments    = 14:15
 Ra          = 1e8
 b_range     = (-1, 1)

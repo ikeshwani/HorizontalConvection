@@ -75,7 +75,7 @@ end
 
 # ── 3-hill ────────────────────────────────────────────────────────────────────
 println("\n=== 3-hill ===")
-hill_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
+hill_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
 hill_areas = compute_region_areas(joinpath(hill_dir, "buoyancy_seg1.nc"))
 normalize_gmix_file(
     joinpath(hill_dir, "Gmix_regions_t385.nc"),
@@ -85,7 +85,7 @@ normalize_gmix_file(
 
 # ── Control ───────────────────────────────────────────────────────────────────
 println("\n=== Control ===")
-ctrl_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
+ctrl_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
 ctrl_areas = compute_region_areas(joinpath(ctrl_dir, "buoyancy_seg1.nc"))
 normalize_gmix_file(
     joinpath(ctrl_dir, "Gmix_regions_Control_RA1e8_seg1to10.nc"),

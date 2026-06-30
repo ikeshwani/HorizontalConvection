@@ -13,7 +13,7 @@ using NaNStatistics
 export vertical_b_flux, buoyancy_level_avg, phi_i
 
 # reversible buoyancy flux  ϕ_z = ∫ ρgw dV = ∫ -bw dV
-# (the integrand ∫ϕz is written out by the simulation; here we volume-integrate it)
+# (the integrand ϕz is written out by the simulation; here we volume-integrate it)
 function vertical_b_flux(ds_b)
     Nx = ds_b.attrib["Nx"]
     Ny = ds_b.attrib["Ny"]
@@ -28,7 +28,7 @@ function vertical_b_flux(ds_b)
 
     time = ds_b["time"][:]
 
-    ∫ϕ_z = ds_b["∫ϕz"][:, :, :, :]
+    ∫ϕ_z = ds_b["ϕz"][:, :, :, :]
 
     ϕ_z = zeros(size(time, 1))
     for n in 1:size(time, 1)

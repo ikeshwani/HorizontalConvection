@@ -190,9 +190,9 @@ end
 if abspath(PROGRAM_FILE) == @__FILE__
     const GRC = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC"
     runs = [
-        "ra1e6_4xstretch_threehill_baseforcing_zerostart",
-        "ra1e6_4xstretch_flat_baseforcing_zerostart",
-        "ra1e8_4xstretch_flat_baseforcing_zerostart",
+        # "ra1e6_4xstretch_threehill_baseforcing_zerostart",
+        # "ra1e6_4xstretch_flat_baseforcing_zerostart",
+        "ra1e8_4xstretch_threehill_baseforcing_zerostart"
     ]
     for run in runs
         make_animation(joinpath(GRC, run))

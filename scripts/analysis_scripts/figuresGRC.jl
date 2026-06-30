@@ -8,25 +8,23 @@ using Printf
 # =========================================================
 # PARAMETERS — edit here to switch between experiments
 # =========================================================
-experiment  = "3hill"       # label used in filenames; "Control" or "3hill"
-Ra_str      = "RA1e8"
-stretch_str = "4x_stretch"
-grid_str    = "512_128"
+experiment  = "3hill"       # label used in titles/filenames; "Control" or "3hill"
+Ra_str      = "RA1e8"       # label used in titles
 seg_range   = 1:19
 avg_window  = 10.0          # time units to average at end of run
 
 numhill     = 3             # 0 = flat bottom, 1–3 = hills
 h₀_frac     = 0.5           # hill height as fraction of H (0 for Control)
 
-# Control:
-# data_dir  = ".../GRC/Control/RA1e8/4x_stretch/512_128/"
-# gmix_file = joinpath(data_dir, "Gmix_regions_Control_RA1e8_seg1to9.nc")
-# numhill=0, h₀_frac=0.0, seg_range=1:9, use_combined=false
-data_dir       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/$(Ra_str)/$(stretch_str)/$(grid_str)/"
+# Self-contained per-run folders (new layout). Each run holds its own segment
+# NetCDFs, derived G_mix files, and a figures/ subfolder. To run the flat-bottom
+# case instead, point data_dir at the *_flat_* run and set numhill=0, h₀_frac=0.0.
+GRC            = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC"
+data_dir       = joinpath(GRC, "ra1e8_4xstretch_threehill_baseforcing_zerostart")
 gmix_file      = joinpath(data_dir, "Gmix_regions_v2_RA1e8_seg1to14.nc")
-ctrl_data_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/$(Ra_str)/$(stretch_str)/$(grid_str)/"
+ctrl_data_dir  = joinpath(GRC, "ra1e8_4xstretch_flat_baseforcing_zerostart")
 ctrl_gmix_file = joinpath(ctrl_data_dir, "Gmix_regions_Control_RA1e8_seg1to12.nc")
-plot_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/$(experiment)/$(Ra_str)/$(stretch_str)/figures/"
+plot_dir       = joinpath(data_dir, "figures")
 mkpath(plot_dir)
 
 # =========================================================
@@ -493,7 +491,7 @@ end
 # =========================================================
 let
     ctrl_psib_file = joinpath(ctrl_data_dir, "psi_b_Control_RA1e8_seg1to12.nc")
-    hill_psib_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/psi_b_t385.nc"
+    hill_psib_file = joinpath(data_dir, "psi_b_t385.nc")
 
     ds_ctrl = NCDataset(ctrl_psib_file)
     ds_hill = NCDataset(hill_psib_file)

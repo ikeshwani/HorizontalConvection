@@ -8,11 +8,11 @@
 #SBATCH --account=bfxn-delta-cpu
 #SBATCH --mem=40G
 #SBATCH --time=3:00:00
-#SBATCH --output="/work/hdd/bfxn/ikeshwani/HorizontalConvection/analysis_scripts/output_message/make_animation%j.out"
+#SBATCH --output="/work/hdd/bfxn/ikeshwani/HorizontalConvection/scripts/analysis_scripts/output_message/make_animation%j.out"
 #SBATCH --mail-user=ikeshwan@uci.edu
 #SBATCH --mail-type="BEGIN,END"
 
-module purge
+##module purge
 
 cd /work/hdd/bfxn/ikeshwani/HorizontalConvection/scripts
 julia --project=../ analysis_scripts/make_animation.jl

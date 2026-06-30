@@ -28,15 +28,15 @@ b_range  = (-1.0, 1.0)
 n_b_bins = 501
 
 if experiment == "control"
-    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
-    segments = 1:12
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
+    segments = 1:15
     tag      = "Control"
-    source   = "Control/RA1e8/4x_stretch/512_128"
+    source   = "ra1e8_4xstretch_flat_baseforcing_zerostart"
 elseif experiment == "hill"
-    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
-    segments = 1:20
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
+    segments = 1:22
     tag      = "3hill"
-    source   = "GRC/RA1e8/4x_stretch/512_128"
+    source   = "ra1e8_4xstretch_threehill_baseforcing_zerostart"
 else
     error("unknown experiment: $experiment (use \"control\" or \"hill\")")
 end

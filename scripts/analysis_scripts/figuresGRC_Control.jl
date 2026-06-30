@@ -8,19 +8,19 @@ using Printf
 # =========================================================
 # PARAMETERS — Control (flat bottom) experiment
 # =========================================================
-experiment  = "Control"
-Ra_str      = "RA1e8"
-stretch_str = "4x_stretch"
-grid_str    = "512_128"
+experiment  = "Control"    # label used in titles
+Ra_str      = "RA1e8"       # label used in titles
 seg_range   = 1:12
 avg_window  = 10.0          # time units to average at end of run
 
 numhill     = 0
 h₀_frac     = 0.0
 
-data_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/$(Ra_str)/$(stretch_str)/$(grid_str)/"
+# Self-contained per-run folder (new layout): segments, derived G_mix, figures/.
+GRC       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC"
+data_dir  = joinpath(GRC, "ra1e8_4xstretch_flat_baseforcing_zerostart")
 gmix_file = joinpath(data_dir, "Gmix_regions_Control_RA1e8_seg1to12.nc")
-plot_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/$(experiment)/$(Ra_str)/$(stretch_str)/figures/"
+plot_dir  = joinpath(data_dir, "figures")
 mkpath(plot_dir)
 
 use_combined = false

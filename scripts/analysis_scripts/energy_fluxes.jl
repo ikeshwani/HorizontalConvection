@@ -4,8 +4,8 @@
 # functions of time.
 #
 # Thin script: vertical_b_flux / phi_i physics live in
-# TopographicHorizontalConvection; this file loads the dataset, calls them,
-# and plots.
+# TopographicHorizontalConvection; this file loads the segmented dataset, calls
+# them per segment (dropping overlapping time steps), and plots.
 #
 # Run from scripts/ with:  julia --project=../ analysis_scripts/energy_fluxes.jl
 
@@ -14,23 +14,63 @@ using NCDatasets
 using CairoMakie
 
 # ---- config ----
-data_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_5x_stretch/b_base/Ra1e7/512_64/buoyancy.nc"
-plot_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU_test/cheby_grid_verification/"
+experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
+
+if experiment == "control"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
+    segments = 1:15
+    tag      = "Control"
+elseif experiment == "hill"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
+    segments = 1:22
+    tag      = "3hill"
+else
+    error("unknown experiment: $experiment (use \"control\" or \"hill\")")
+end
+plot_dir = joinpath(data_dir, "figures")   # figures live inside the run folder
 mkpath(plot_dir)
 
-ds = NCDataset(data_file, "r")
+# ---- compute fluxes over segments, skipping overlapping time steps ----
+time = Float64[]
+ϕ_i  = Float64[]
+ϕ_z  = Float64[]
 
-ϕ_i_ra7 = phi_i(ds)
-ϕ_z_ra7 = vertical_b_flux(ds)
-time    = ds["time"][:]
+let t_last = -Inf
+    for s in segments
+        ds = NCDataset(joinpath(data_dir, "buoyancy_seg$(s).nc"), "r")
+        t_seg = ds["time"][:]
+        valid = findall(t_seg .> t_last)
 
+        if isempty(valid)
+            @info "  seg $s: all $(length(t_seg)) steps are duplicates — skipping"
+            close(ds)
+            continue
+        end
+
+        ϕ_i_seg = phi_i(ds)            # whole-segment time series
+        ϕ_z_seg = vertical_b_flux(ds)
+
+        for k in valid[1]:length(t_seg)
+            push!(time, t_seg[k])
+            push!(ϕ_i,  ϕ_i_seg[k])
+            push!(ϕ_z,  ϕ_z_seg[k])
+        end
+
+        t_last = t_seg[end]
+        close(ds)
+        @info "  seg $s: processed through t = $(round(t_last, digits=2))  (total $(length(time)) steps)"
+    end
+end
+
+# ---- plot ----
 fig = Figure()
-ax = Axis(fig[1,1], xlabel="time", ylabel="dissipation param",
-          title = "ϕ_z and ϕ_i as function of time for Ra=1e7 5x grid stretch")
+ax = Axis(fig[1,1], xlabel="time", ylabel="flux",
+          title = "$(tag) — ϕ_z and ϕ_i versus time")
 
-scatter!(ax, time, ϕ_i_ra7, label = "ϕ_i")
-scatter!(ax, time, ϕ_z_ra7, label = "ϕ_z")
+scatter!(ax, time, ϕ_i, label = "ϕ_i")
+scatter!(ax, time, ϕ_z, label = "ϕ_z")
 
 fig[1,2] = axislegend()
 
-save(joinpath(plot_dir, "phi_i_z_testra7_5x.png"), fig)
+save(joinpath(plot_dir, "phi_i_z_$(tag).png"), fig)
+@info "saved flux plot → $(joinpath(plot_dir, "phi_i_z_$(tag).png"))"

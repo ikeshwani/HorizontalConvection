@@ -100,12 +100,17 @@ calc_APE(PE, BPE) = PE .- BPE
 # and over a trailing time window of Nt_window steps) and a fluctuation:
 #   ⟨MKE⟩(t) = vol-avg of 0.5 (ū² + v̄² + w̄²)
 #   ⟨TKE⟩(t) = vol-avg of 0.5 ( (u'²)‾ + (v'²)‾ + (w'²)‾ )   (y-averaged squares)
-#   ⟨KE⟩(t)  = vol-avg of the Oceanostics `ke` (midplane slice), for comparison.
+#   ⟨KE⟩(t)  = full-3D vol-avg of 0.5 (u² + v² + w²) from the velocities, so that
+#              ⟨KE⟩ is consistent with ⟨MKE⟩ + ⟨TKE⟩ on the same (velocity) time
+#              axis. (Compare against the Oceanostics `ke` diagnostic separately —
+#              it is on a coarser time grid.)
 #
-# `u`, `v`, `w` are the (lazy) velocity dataset variables [Nx,Ny,Nz,Nt];
-# `ke` is the Oceanostics ke variable [Nx,1,Nz,Nt]; `wet` is the [Nx,Ny,Nz] mask.
+# `u`, `v`, `w` are time-indexable velocity sources [Nx,Ny,Nz,Nt] (a lazy
+# NCDataset variable, an in-memory Array, or a multi-segment view); `wet` is the
+# [Nx,Ny,Nz] mask. The xz densities are y-averages, so their volume average uses
+# the y-summed wet column volume ΔV_col(x,z) = Σ_y wet·ΔV (correct for 3D, Ny>1).
 # Returns (MKE_t, TKE_t, KE_t, MKE_xz, TKE_xz).
-function calc_kinetic_energies(u, v, w, ke, wet, ΔV, wet_Vol, Nx, Ny, Nz, Nt; Nt_window)
+function calc_kinetic_energies(u, v, w, wet, ΔV, wet_Vol, Nx, Ny, Nz, Nt; Nt_window)
     MKE_t = zeros(Nt)
     TKE_t = zeros(Nt)
     KE_t  = zeros(Nt)
@@ -113,12 +118,21 @@ function calc_kinetic_energies(u, v, w, ke, wet, ΔV, wet_Vol, Nx, Ny, Nz, Nt; N
     MKE_xz = zeros(Nx, Nz, Nt)
     TKE_xz = zeros(Nx, Nz, Nt)
 
-    for n in 1:Nt
-        # Oceanostics KE (midplane slice) for comparison with MKE + TKE
-        keₙ = Array(ke[:, 1, :, n])
-        mask_land!(keₙ, wet[:, 1, :])
+    # y-summed wet column volume — weights y-averaged densities over the full domain
+    ΔV_col = dropdims(nansum(wet .* ΔV, dims=2), dims=2)   # [Nx, Nz]
 
-        KE_t[n] = nansum(keₙ .* ΔV[:, 1, :], dims=(1,2))[1,1,1] ./ wet_Vol
+    for n in 1:Nt
+        # instantaneous velocities at time n (full 3D)
+        uₙ = Array(u[1:Nx, 1:Ny, 1:Nz, n])
+        vₙ = Array(v[1:Nx, 1:Ny, 1:Nz, n])
+        wₙ = Array(w[1:Nx, 1:Ny, 1:Nz, n])
+
+        mask_land!(uₙ, wet)
+        mask_land!(vₙ, wet)
+        mask_land!(wₙ, wet)
+
+        # total KE from the velocities (full-3D volume average) — replaces Oceanostics ke
+        KE_t[n] = nansum(0.5 .* (uₙ.^2 .+ vₙ.^2 .+ wₙ.^2) .* ΔV, dims=(1,2,3))[1,1,1] ./ wet_Vol
 
         # trailing time window for the time mean
         t_start = max(1, n - Nt_window + 1)
@@ -128,7 +142,8 @@ function calc_kinetic_energies(u, v, w, ke, wet, ΔV, wet_Vol, Nx, Ny, Nz, Nt; N
         v_block = Array(v[1:Nx, 1:Ny, 1:Nz, t_inds])
         w_block = Array(w[1:Nx, 1:Ny, 1:Nz, t_inds])
 
-        for k in axes(u_block, 4)
+        # mask dry cells in place (use @views so the mutation hits the block)
+        @views for k in axes(u_block, 4)
             mask_land!(u_block[:,:,:,k], wet)
             mask_land!(v_block[:,:,:,k], wet)
             mask_land!(w_block[:,:,:,k], wet)
@@ -141,16 +156,7 @@ function calc_kinetic_energies(u, v, w, ke, wet, ΔV, wet_Vol, Nx, Ny, Nz, Nt; N
 
         # MKE density and its volume average
         MKE_xz[:,:,n] .= 0.5 .* (u_bar.^2 .+ v_bar.^2 .+ w_bar.^2)
-        MKE_t[n] = nansum(MKE_xz[:, :, n] .* ΔV[:,1,:], dims=(1,2))[1,1,1] ./ wet_Vol
-
-        # instantaneous velocities at time n
-        uₙ = Array(u[1:Nx, 1:Ny, 1:Nz, n])
-        vₙ = Array(v[1:Nx, 1:Ny, 1:Nz, n])
-        wₙ = Array(w[1:Nx, 1:Ny, 1:Nz, n])
-
-        mask_land!(uₙ, wet)
-        mask_land!(vₙ, wet)
-        mask_land!(wₙ, wet)
+        MKE_t[n] = nansum(MKE_xz[:, :, n] .* ΔV_col, dims=(1,2))[1,1,1] ./ wet_Vol
 
         # fluctuations about the mean
         u_prime = uₙ .- reshape(u_bar, Nx, 1, Nz)
@@ -163,7 +169,7 @@ function calc_kinetic_energies(u, v, w, ke, wet, ΔV, wet_Vol, Nx, Ny, Nz, Nt; N
         w_prime_square_bar = dropdims(nanmean(w_prime.^2, dims=2); dims=2)
 
         TKE_xz[:, :, n] .= 0.5 .* (u_prime_square_bar .+ v_prime_square_bar .+ w_prime_square_bar)
-        TKE_t[n] = nansum(TKE_xz[:, :, n] .* ΔV[:,1,:], dims=(1,2))[1,1,1] ./ wet_Vol
+        TKE_t[n] = nansum(TKE_xz[:, :, n] .* ΔV_col, dims=(1,2))[1,1,1] ./ wet_Vol
     end
 
     return MKE_t, TKE_t, KE_t, MKE_xz, TKE_xz

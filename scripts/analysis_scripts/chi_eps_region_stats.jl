@@ -2,17 +2,18 @@ using TopographicHorizontalConvection   # physics: seafloor_profile, boundary_la
 using NCDatasets, CairoMakie, Statistics, Printf
 
 avg_window = 30.0
-plot_dir   = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/3hill/RA1e8/4x_stretch/figures/"
+GRC        = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC"
+plot_dir   = joinpath(GRC, "ra1e8_4xstretch_threehill_baseforcing_zerostart", "figures")
 mkpath(plot_dir)
 
 experiments = [
     (label     = "Control",
-     data_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/",
+     data_dir  = joinpath(GRC, "ra1e8_4xstretch_flat_baseforcing_zerostart"),
      seg_range = 1:12,
      numhill   = 0,
      h₀_frac   = 0.0),
     (label     = "3-hill",
-     data_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/",
+     data_dir  = joinpath(GRC, "ra1e8_4xstretch_threehill_baseforcing_zerostart"),
      seg_range = 1:20,
      numhill   = 3,
      h₀_frac   = 0.5),

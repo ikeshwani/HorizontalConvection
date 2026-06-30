@@ -4,7 +4,7 @@ using NCDatasets
 using Statistics
 using Printf
 
-output_dir =  "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
+output_dir =  "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
 
 buoy_file = joinpath(output_dir, "buoyancy_seg3.nc")
 #oc_file = joinpath(output_dir, "oceanostics.nc")
@@ -39,7 +39,7 @@ println("last few x spacings : ", Δx[end-4:end])
 println("\n first few z spacings : ", Δz[1:5])
 println("last few z spacings : ", Δz[end-4:end])
 
-plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/cheby_grid_verification/"
+plot_dir = joinpath(output_dir, "figures")
 mkpath(plot_dir)
 
 println("creating plot 1: buoyancy heatmap with grid visualization")

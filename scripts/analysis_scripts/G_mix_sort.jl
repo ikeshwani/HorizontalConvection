@@ -30,18 +30,17 @@ b_range  = (-1, 1)
 n_b_bins = 501
 
 if experiment == "control"
-    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/"
-    plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/Control/RA1e8/4x_stretch/figures/"
-    segments = 1:12
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
+    segments = 1:15
     tag      = "Control"
 elseif experiment == "hill"
-    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/"
-    plot_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/RA1e8/4x_stretch/figures/"
-    segments = 1:19
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
+    segments = 1:22
     tag      = "3hill"
 else
     error("unknown experiment: $experiment (use \"control\" or \"hill\")")
 end
+plot_dir = joinpath(data_dir, "figures")   # figures live inside the run folder
 mkpath(plot_dir)
 
 outfile = joinpath(data_dir, "Gmix_regions_$(tag)_RA1e8_seg$(first(segments))to$(last(segments)).nc")

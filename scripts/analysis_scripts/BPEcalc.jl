@@ -6,6 +6,11 @@
 # Thin script: calc_PE / calc_BPE / calc_APE physics live in
 # TopographicHorizontalConvection; this file loads data, calls them, saves, plots.
 #
+# GRC runs are written in segments (buoyancy_seg<N>.nc), so this loads them in
+# order, drops overlapping time steps between consecutive segments, and computes
+# the reservoirs one snapshot at a time (memory-light — never holds the whole 4D
+# buoyancy field in memory).
+#
 # Run from scripts/ with:  julia --project=../ analysis_scripts/BPEcalc.jl
 
 using TopographicHorizontalConvection   # physics: calc_PE, calc_BPE, calc_APE
@@ -14,67 +19,95 @@ using NaNStatistics
 using CairoMakie
 
 # ---- config ----
-data_file  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_5x_stretch/b_base/Ra1e7/512_64/buoyancy.nc"
-output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU_test/cheb_5x_stretch/b_base/Ra1e7/512_64/"
-plot_dir   = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU_test/energyplots/"
+experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
+
+if experiment == "control"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
+    segments = 1:15
+    tag      = "Control"
+elseif experiment == "hill"
+    data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
+    segments = 1:22
+    tag      = "3hill"
+else
+    error("unknown experiment: $experiment (use \"control\" or \"hill\")")
+end
+plot_dir = joinpath(data_dir, "figures")   # figures live inside the run folder
 mkpath(plot_dir)
 
-ds = NCDataset(data_file, "r")
+# ---- grid info from seg1 (kept open: calc_BPE reads grid metadata from it) ----
+ds_grid = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"), "r")
 
-b = ds["b"]   # lazy load — slicing the whole thing would blow up memory
+x = ds_grid["x_caa"][:]
+y = ds_grid["y_aca"][:]
+z = ds_grid["z_aac"][:]
 
-x = ds["x_caa"][:]
-y = ds["y_aca"][:]
-z = ds["z_aac"][:]
-time = ds["time"][:]
+Ra = ds_grid.attrib["Ra"]
+H  = ds_grid.attrib["H"]
+Lx = ds_grid.attrib["Lx"]
+Ly = ds_grid.attrib["Ly"]
 
-Ra = ds.attrib["Ra"]
-H  = ds.attrib["H"]
-Lx = ds.attrib["Lx"]
-Ly = ds.attrib["Ly"]
+Nx = ds_grid.attrib["Nx"]
+Ny = ds_grid.attrib["Ny"]
+Nz = ds_grid.attrib["Nz"]
 
-Nx = ds.attrib["Nx"]
-Ny = ds.attrib["Ny"]
-Nz = ds.attrib["Nz"]
-Nt = length(time)
-
-println("Grid : Nx=$Nx, Ny=$Ny, Nz=$Nz, Nt=$Nt")
-
-Δx = reshape(ds["Δx_caa"][:], Nx, 1, 1)
-Δy = reshape(ds["Δy_aca"][:], 1, Ny, 1)
-Δz = reshape(ds["Δz_aac"][:], 1, 1, Nz)
-
+Δx = reshape(ds_grid["Δx_caa"][:], Nx, 1, 1)
+Δy = reshape(ds_grid["Δy_aca"][:], 1, Ny, 1)
+Δz = reshape(ds_grid["Δz_aac"][:], 1, 1, Nz)
 ΔV = Δx .* Δy .* Δz
 
 # 3D z array for PE calculations
 z_3d = repeat(reshape(z, 1, 1, Nz), Nx, Ny, 1)
 
-# wet volume (computed once from a non-initial snapshot in case of cold start)
-b_ref = Array(b[:, :, :, 2])
-wet   = b_ref .!= 0.0
+# wet volume (from a non-initial snapshot in case of cold start)
+b_ref   = Array(ds_grid["b"][:, :, :, 2])
+wet     = b_ref .!= 0.0
 wet_Vol = nansum(wet .* ΔV, dims=(1,2,3))[1,1,1]
-@info "Wet Volume: $wet_Vol"
+@info "Grid : Nx=$Nx, Ny=$Ny, Nz=$Nz   Wet Volume: $wet_Vol"
 
-# ---- compute reservoirs (physics from src/) ----
-PE  = zeros(Nt)
-BPE = zeros(Nt)
-APE = zeros(Nt)
+# ---- compute reservoirs over segments, skipping overlapping time steps ----
+PE   = Float64[]
+BPE  = Float64[]
+APE  = Float64[]
+time = Float64[]
 
-for n in 1:Nt
-    bₙ = Array(b[:, :, :, n])
-    PE[n]  = calc_PE(bₙ, z_3d, ΔV, wet_Vol)
-    BPE[n] = calc_BPE(ds, bₙ, wet_Vol)
-    APE[n] = calc_APE(PE[n], BPE[n])
+let t_last = -Inf
+    for s in segments
+        ds = NCDataset(joinpath(data_dir, "buoyancy_seg$(s).nc"), "r")
+        t_seg = ds["time"][:]
+        valid = findall(t_seg .> t_last)
 
-    n % 10 == 0 && @info "Processed $n/$Nt timesteps"
+        if isempty(valid)
+            @info "  seg $s: all $(length(t_seg)) steps are duplicates — skipping"
+            close(ds)
+            continue
+        end
+        n_skip = valid[1] - 1
+        n_skip > 0 && @info "  seg $s: skipping first $n_skip overlapping step(s)"
+
+        for k in valid[1]:length(t_seg)
+            bₙ  = Array(ds["b"][:, :, :, k])
+            peₙ = calc_PE(bₙ, z_3d, ΔV, wet_Vol)
+            bpeₙ = calc_BPE(ds_grid, bₙ, wet_Vol)   # ds_grid → grid metadata (identical across segments)
+            push!(PE,  peₙ)
+            push!(BPE, bpeₙ)
+            push!(APE, calc_APE(peₙ, bpeₙ))
+            push!(time, t_seg[k])
+        end
+
+        t_last = t_seg[end]
+        close(ds)
+        @info "  seg $s: processed through t = $(round(t_last, digits=2))  (total $(length(time)) steps)"
+    end
 end
 
+Nt = length(time)
 @info "⟨PE⟩ range : $(minimum(PE)) to $(maximum(PE))"
 @info "⟨BPE⟩ range : $(minimum(BPE)) to $(maximum(BPE))"
 @info "⟨APE⟩ range : $(minimum(APE)) to $(maximum(APE))"
 
 # ---- save ----
-output_file = joinpath(output_dir, "PE.nc")
+output_file = joinpath(data_dir, "PE.nc")
 @info "saving energetics to $output_file"
 
 NCDataset(output_file, "c") do ds_out
@@ -85,7 +118,7 @@ NCDataset(output_file, "c") do ds_out
     defVar(ds_out, "BPE", Float64, ("time",))
     defVar(ds_out, "APE", Float64, ("time",))
 
-    ds_out["time"][:] = time[1:Nt]
+    ds_out["time"][:] = time
     ds_out["PE"][:] = PE
     ds_out["BPE"][:] = BPE
     ds_out["APE"][:] = APE
@@ -118,12 +151,13 @@ end
 
 # ---- plot ----
 fig = Figure(size=(600,600))
-ax = Axis(fig[1,1], xlabel="time", ylabel="energy [m²/s²]")
-lines!(ax, time[1:Nt], PE,  label="⟨PE⟩",  linewidth=2, color=:orange)
-lines!(ax, time[1:Nt], BPE, label="⟨BPE⟩", linewidth=2, color=:blue)
-lines!(ax, time[1:Nt], APE, label="⟨APE⟩", linewidth=2, color=:green)
+ax = Axis(fig[1,1], xlabel="time", ylabel="energy [m²/s²]",
+          title="$(tag)  Ra = $(Ra) — potential energy reservoirs")
+lines!(ax, time, PE,  label="⟨PE⟩",  linewidth=2, color=:orange)
+lines!(ax, time, BPE, label="⟨BPE⟩", linewidth=2, color=:blue)
+lines!(ax, time, APE, label="⟨APE⟩", linewidth=2, color=:green)
 axislegend(ax)
-save(joinpath(plot_dir, "Ra1e7_5xgrid_PE.png"), fig)
-@info "saved Ra1e7 5x grid stretch PE plot"
+save(joinpath(plot_dir, "PE_$(tag).png"), fig)
+@info "saved PE plot → $(joinpath(plot_dir, "PE_$(tag).png"))"
 
-close(ds)
+close(ds_grid)

@@ -5,9 +5,11 @@ using Printf
 using Statistics
 
 # ---- paths ----
-hill_psib_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/RA1e8/4x_stretch/512_128/psi_b_t385.nc"
-ctrl_psib_file = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/RA1e8/4x_stretch/512_128/psi_b_Control_RA1e8_seg1to12.nc"
-plot_dir       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/3hill/RA1e8/4x_stretch/figures/"
+hill_dir       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart"
+ctrl_dir       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart"
+hill_psib_file = joinpath(hill_dir, "psi_b_t385.nc")
+ctrl_psib_file = joinpath(ctrl_dir, "psi_b_Control_RA1e8_seg1to12.nc")
+plot_dir       = joinpath(hill_dir, "figures")
 mkpath(plot_dir)
 
 avg_window = 10.0   # time units to average at the end

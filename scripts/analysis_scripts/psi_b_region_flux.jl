@@ -7,19 +7,17 @@ using Printf
 # =========================================================
 # PARAMETERS
 # =========================================================
-experiment  = "3hill"
-Ra_str      = "RA1e8"
-stretch_str = "4x_stretch"
-grid_str    = "512_128"
+experiment  = "threehill"   # label used in titles
+Ra_str      = "RA1e8"       # label used in titles
 avg_window  = 10.0
 
-data_dir       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/$(Ra_str)/$(stretch_str)/$(grid_str)/"
+data_dir       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
 psib_file      = joinpath(data_dir, "psi_b_t385.nc")
 gmix_file      = joinpath(data_dir, "Gmix_regions_v2_RA1e8_seg1to14.nc")
-ctrl_data_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/Control/$(Ra_str)/$(stretch_str)/$(grid_str)/"
+ctrl_data_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
 ctrl_psib_file = joinpath(ctrl_data_dir, "psi_b_Control_RA1e8_seg1to12.nc")
 ctrl_gmix_file = joinpath(ctrl_data_dir, "Gmix_regions_Control_RA1e8_seg1to12.nc")
-plot_dir       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/figures/GPU/GRC/$(experiment)/$(Ra_str)/$(stretch_str)/figures/"
+plot_dir       = joinpath(data_dir, "figures")
 mkpath(plot_dir)
 
 # =========================================================
