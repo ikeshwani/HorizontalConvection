@@ -29,7 +29,7 @@ n_b_bins = 501
 
 if experiment == "control"
     data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
-    segments = 1:15
+    segments = 14:15
     tag      = "Control"
 elseif experiment == "hill"
     data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
@@ -44,7 +44,7 @@ mkpath(plot_dir)
 outfile = joinpath(data_dir, "Gmix_domain_$(tag)_RA1e8_seg$(first(segments))to$(last(segments)).nc")
 
 # ---- load grid info from seg1 ----
-ds1    = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"))
+ds1    = NCDataset(joinpath(data_dir, "buoyancy_seg14.nc"))
 x      = ds1["x_caa"][:]
 z      = ds1["z_aac"][:]
 Nx, Ny, Nz = ds1.attrib["Nx"], ds1.attrib["Ny"], ds1.attrib["Nz"]
@@ -116,6 +116,8 @@ n_b   = length(b_out)
 # ---- main time loop: G_mix over the whole wet domain (physics from src/) ----
 Gmix = zeros(Float32, n_b, Nt)
 
+
+
 println("computing whole-domain G_mix: $Nt time steps...")
 for t in 1:Nt
     b_flat   = vec(b_all[:, :, :, t])
@@ -125,36 +127,49 @@ for t in 1:Nt
     t % 50 == 0 && @printf("  t = %d / %d\n", t, Nt)
 end
 
+#time averaged gmix
+Gmix_mean = nanmean(Gmix, dims=2)
+
 # ---- streamfunction (physics from src/) ----
 println("computing streamfunction ψ...")
 ψ = get_ψ(u_all, Δy_vec, Δz_vec, Nx, Nz, Nt)
 
-# ---- save ----
-println("saving to $outfile ...")
-NCDataset(outfile, "c") do ds_out
-    defDim(ds_out, "b",    n_b)
-    defDim(ds_out, "time", Nt)
-    defDim(ds_out, "x",    Nx)
-    defDim(ds_out, "z",    Nz)
+# # ---- save ----
+# println("saving to $outfile ...")
+# NCDataset(outfile, "c") do ds_out
+#     defDim(ds_out, "b",    n_b)
+#     defDim(ds_out, "time", Nt)
+#     defDim(ds_out, "x",    Nx)
+#     defDim(ds_out, "z",    Nz)
 
-    defVar(ds_out, "b",    b_out, ("b",))
-    defVar(ds_out, "time", time,  ("time",))
-    defVar(ds_out, "x",    x,     ("x",))
-    defVar(ds_out, "z",    z,     ("z",))
+#     defVar(ds_out, "b",    b_out, ("b",))
+#     defVar(ds_out, "time", time,  ("time",))
+#     defVar(ds_out, "x",    x,     ("x",))
+#     defVar(ds_out, "z",    z,     ("z",))
 
-    v_g = defVar(ds_out, "Gmix", Gmix, ("b", "time"))
-    v_g.attrib["long_name"] = "whole-domain G_mix density G(b,t)"
+#     v_g = defVar(ds_out, "Gmix", Gmix, ("b", "time"))
+#     v_g.attrib["long_name"] = "whole-domain G_mix density G(b,t)"
 
-    defVar(ds_out, "psi", ψ, ("x", "z", "time"))
+#     defVar(ds_out, "psi", ψ, ("x", "z", "time"))
 
-    ds_out.attrib["experiment"] = tag
-    ds_out.attrib["Ra"]         = Ra
-    ds_out.attrib["segments"]   = "$(first(segments)):$(last(segments))"
-end
-println("saved → $outfile")
+#     ds_out.attrib["experiment"] = tag
+#     ds_out.attrib["Ra"]         = Ra
+#     ds_out.attrib["segments"]   = "$(first(segments)):$(last(segments))"
+# end
+# println("saved → $outfile")
 
 # ---- plot ----
 figname = "Gmix_domain_$(tag)_RA1e8_seg$(first(segments))to$(last(segments)).png"
+fig  = Figure(size=(900, 450))
+clim = 0.008
+ax   = Axis(fig[1, 1], xlabel="time", ylabel="buoyancy",
+            title="Whole-domain G_mix density — $(tag) Ra=$(Ra)")
+hm = heatmap!(ax, time, b_out, Gmix', colormap=:balance, colorrange=(-clim, clim))
+Colorbar(fig[1, 2], hm)
+save(joinpath(plot_dir, figname), fig)
+println("saved figure → $(joinpath(plot_dir, figname))")
+
+figname = "Gmix_domain_time_avg$(tag)_RA1e8_seg$(first(segments))to$(last(segments)).png"
 fig  = Figure(size=(900, 450))
 clim = 0.008
 ax   = Axis(fig[1, 1], xlabel="time", ylabel="buoyancy",

@@ -7,7 +7,7 @@
 #SBATCH --account=bfxn-delta-cpu
 #SBATCH --mem=140G
 #SBATCH --time=04:00:00
-#SBATCH --output="scripts/analysis_scripts/output_message/psi_b_control_%j.out"
+#SBATCH --output="/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/logs/psi_calc%j.out"
 #SBATCH --mail-user=ikeshwan@uci.edu
 #SBATCH --mail-type="BEGIN,END"
 

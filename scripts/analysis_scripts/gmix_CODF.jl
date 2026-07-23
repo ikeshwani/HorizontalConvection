@@ -1,15 +1,30 @@
-using TopographicHorizontalConvection   # region masks: gmix_region_masks, precompute_regions
+using TopographicHorizontalConvection   # region masks + blended_b_edges
 using NCDatasets
 using CairoMakie
 using NaNStatistics
+using Statistics
 using Printf
 
 # ---- config ----
-experiment = "hill"          # "control" (flat bottom) or "hill" (3-hill GRC)
+experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
 
 Ra       = 1e8                  # 1e8 or 1e6
-b_range  = (-1, 1)
-n_b_bins = 101                  # coarse b-bins: CODF takes one d/db, fewer bins = less noise
+b_range  = (-1, 1)              # only used when bin_mode = :uniform
+n_b_bins = 101                  # number of bin EDGES (→ n_b_bins-1 centers)
+
+# Buoyancy axis.  :uniform is the old evenly-spaced axis; :blended places edges evenly
+# in φ(b) = (1-λ)·b_norm + λ·F(b) (see blended_b_edges in src/analysis/gmix.jl).
+# The uniform axis is finer than the b-gap between adjacent z-levels in the quiescent
+# basins, so bins land between levels and G_mix reads 0 there — λ=0.7 widens the tail
+# bins past that gap while spending the freed bins on the well-mixed layer.
+# λ is tuned per run: see scripts/analysis_scripts/gmix_bin_tuning.jl.
+bin_mode = :blended             # :blended or :uniform
+λ_bins   = 1.0
+
+# ∂M/∂t intervals: endpoint finite differences over blocks of this many output
+# steps : 100 steps × 0.1 BUT each interval uses steps_per_interval + 1 = 101 snapshots
+# output interval = 10 time units per interval.
+steps_per_interval = 100
 
 # Ra → path tag + filename tag
 if Ra == 1e8
@@ -23,11 +38,11 @@ end
 if experiment == "control"
     topo     = "flat"
     tag      = "Control"
-    segments = Ra == 1e8 ? (1:15) : (1:7)
+    segments = Ra == 1e8 ? (1:20) : (1:7)
 elseif experiment == "hill"
     topo     = "threehill"
     tag      = "3hill"
-    segments = Ra == 1e8 ? (1:23) : (1:10) #ill have to change this as the segments increase 
+    segments = Ra == 1e8 ? (1:26) : (1:10) #ill have to change this as the segments increase 
 else
     error("unknown experiment: $experiment (use \"control\" or \"hill\")")
 end
@@ -36,7 +51,7 @@ data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/$(Ra_ta
 plot_dir = joinpath(data_dir, "figures")   # figures live inside the run folder
 mkpath(plot_dir)
 
-outfile = joinpath(data_dir, "Gmix_regions_CODF_$(tag)_$(Ra_str)_seg$(first(segments))to$(last(segments)).nc")
+outfile = joinpath(data_dir, "Gmix_quantile_regions_CODF_$(tag)_$(Ra_str)_seg$(first(segments))to$(last(segments)).nc")
 
 # load in global attribs from seg 1
 ds1 = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"))
@@ -73,8 +88,30 @@ close(ds1)
 # split BY REGION so boundary-layer mixing is separated from the interior.
 # Gmix = ∂/∂b ∫_(V(b'<b)) -∇ ⋅ (-κ ∇b) dV
 
-# buoyancy axis for the b-coordinate integral (time-independent, build once)
-b_edges   = collect(range(b_range[1], b_range[2], length=n_b_bins))
+# ---- Pass 0: build the buoyancy axis ----------------------------------------
+# The axis is built ONCE and frozen for every segment and timestep: ∂M/∂t differences
+# M between times, so the bins must be identical at every time.  The blended axis is
+# derived from one quasi-steady snapshot (the last step of the final segment); the
+# volume CDF it uses is an integral quantity and is stable in time, so the axis holds
+# up out-of-sample (verified: 0 holes over t = 475–565, see gmix_bin_tuning.jl).
+if bin_mode == :uniform
+    b_edges = collect(range(b_range[1], b_range[2], length=n_b_bins))
+elseif bin_mode == :blended
+    println("Pass 0: building blended buoyancy axis (λ = $λ_bins) from seg$(last(segments))...")
+    ds_ax  = NCDataset(joinpath(data_dir, "buoyancy_seg$(last(segments)).nc"))
+    b_ax   = Array{Float64}(ds_ax["b"][:, :, :, end])
+    t_ax   = Float64(ds_ax["time"][end])
+    close(ds_ax)
+    wet_idx = findall(vec(wet))
+    b_edges = blended_b_edges(vec(b_ax)[wet_idx], vec(vol)[wet_idx], n_b_bins; λ=λ_bins)
+    @printf("  axis from t = %.1f: %d edges, width min %.4f / median %.4f / max %.4f\n",
+            t_ax, length(b_edges), minimum(diff(b_edges)),
+            median(diff(b_edges)), maximum(diff(b_edges)))
+    b_ax = nothing; GC.gc()
+else
+    error("unknown bin_mode: $bin_mode (use :blended or :uniform)")
+end
+n_b_bins  = length(b_edges)          # blended_b_edges drops ties, so re-read the count
 b_centers = 0.5 .* (b_edges[1:end-1] .+ b_edges[2:end])
 
 # region geometry.  Step 1: split the single lumped "boundary_layer" into 7
@@ -182,16 +219,37 @@ function gsurface_col(b_top, irange)
     return -diff(M) ./ diff(b_edges)                               # on b_centers
 end
 
-# central time derivative along dim 2 (uneven dt handled)
-function ddt_time(A, t)
-    dA = similar(A, Float64)
-    dA[:, 1]   .= (A[:, 2]   .- A[:, 1])     ./ (t[2] - t[1])
-    dA[:, end] .= (A[:, end] .- A[:, end-1]) ./ (t[end] - t[end-1])
-    for k in 2:length(t)-1
-        dA[:, k] .= (A[:, k+1] .- A[:, k-1]) ./ (t[k+1] - t[k-1])
-    end
-    return dA
-end
+# ∂M/∂t via interval endpoint differences.  The record is chunked into intervals
+# of steps_per_interval output steps (steps_per_interval+1 snapshots, with the
+# endpoint snapshot SHARED between consecutive intervals so they tile time with
+# no gap and no double-counting):
+#
+#   dMdt_k = (M[:, e_k] - M[:, s_k]) / (t[e_k] - t[s_k])
+#
+# M comes from instantaneous snapshots, so this endpoint difference is the EXACT
+# time-average of ∂M/∂t over the interval (fundamental theorem of calculus), and
+# the interval derivatives telescope: Σ_k dMdt_k·Δt_k = M[end] − M[1].  This
+# replaces the old per-snapshot central difference, whose window-average smeared
+# in snapshots from outside the averaging window.  The flux terms (G_mix, Ψ,
+# G_surface) are snapshot means over the SAME interval, so every budget term
+# refers to the same window.  steps leftover after the last full interval form
+# a shorter FINAL interval (the endpoint difference is exact for any length) so 
+# at the end of the record which is the equilibrium period will always be part of the budget. 
+
+#inputs into interval_dMdt:
+# M is a matrix of size [n_bins, Nt], basically Mass (volume) M(b) at every snapshot
+# i_start and i_end are vectors holding the first and last snapshot of each time interval
+# t is the time vector. for each interval k, M[:, i_end[k]] .- M[:, i_start[k]] takes the
+# whole column at the interval's last snapshot minus the column at its first snapshot for all b bins.
+# then we divide through by the actual elapsed time between those two snapshots: t[i_end[k]] - t[i_start[k]]
+interval_dMdt(M, i_start, i_end, t) = reduce(hcat,
+    [(M[:, i_end[k]] .- M[:, i_start[k]]) ./ (t[i_end[k]] - t[i_start[k]])
+     for k in eachindex(i_start)]) #produces one column vector per interval
+     # reduce(hcat, ... puts each vector side by side into a matrix of size [n_bins, n_int]
+
+# same shape logic, but for the flux terms (G_mix, ψ, G_surface)
+interval_mean(A, i_start, i_end) = reduce(hcat, 
+    [vec(nanmean(A[:, i_start[k]:i_end[k]], dims=2)) for k in eachindex(i_start)])
 
 # ---- Pass 1: build the global time vector, deduplicating segment overlaps ---
 println("Pass 1: scanning time vectors from segments $(first(segments))–$(last(segments))...")
@@ -280,9 +338,11 @@ for s in segments
     # the homogeneous b≈−0.3 layer at hill edges), and a 0.5·(edge+edge) chord
     # across a step injects a spurious half-height value — the exact cumulative at
     # each center avoids it (≈10× smaller error vs the fine-grid ψ_b reference).
+    # Pass b_centers explicitly: deriving the axis from (b_range, n_b_bins) only
+    # coincides with b_centers when the axis is uniform, and would silently put ψ on a
+    # different axis from G_mix / M / G_surface once the bins are non-uniform.
     ψ_seg, _ = get_ψb_sort(b_seg, u_seg, Δy_vec, Δz_vec, Nx, Ny, Nz, nt;
-                           b_range=(b_centers[1], b_centers[end]),
-                           n_b_bins=length(b_centers))
+                           b_bins=b_centers)
     ψ_b[:, :, gi] .= ψ_seg
 
     t_last   = t_seg[t_range[end]]
@@ -292,14 +352,37 @@ for s in segments
 end  # for s
 end  # let
 
-# ---- Step 5: per-column full-depth budget + residual -------------------------
+# ---- Step 5: per-column full-depth budget + residual, per interval -----------
 # full column = interior (sub-zBL) + its BL strip.  Ψ = convergent transport into
 # the column = ψ_in_left + ψ_in_right = ψ_iR − ψ_iL (finalized sign convention,
-# see scratch.jl).  Residual R = ∂M/∂t − G_mix − Ψ − G_surface ≈ 0 (quasi-steady).
+# see scratch.jl).  Residual R = ∂M/∂t − G_mix − Ψ − G_surface ≈ 0 (quasi-steady),
+# with ∂M/∂t the exact interval endpoint difference and the other terms snapshot
+# means over the same interval (see interval_dMdt above).
+n_int = (Nt - 1) ÷ steps_per_interval
+if n_int == 0            # if i plug in data that is shorter than the interval, it will turn the whole thing into one interval
+    i_start, i_end, n_int = [1], [Nt], 1
+else
+    i_start = [(k - 1) * steps_per_interval + 1 for k in 1:n_int] #building interval start array [1, 101, 201, 301, ...]
+    i_end   = i_start .+ steps_per_interval #building interval end array [101, 201, 301, ...] interval 1 ends at 101 and interval 2 starts at 101
+    if i_end[end] < Nt   # leftover steps → shorter final interval (the endpoint
+        # difference is exact for any length), so the end of the record — the
+        # equilibrium period — is always included in the budget
+        push!(i_start, i_end[end]);  push!(i_end, Nt);  n_int += 1
+    end
+end
+t_start = times[i_start]
+t_end   = times[i_end]
+t_mid   = 0.5 .* (t_start .+ t_end)
+@printf("Step 5: %d interval(s), t = %.1f → %.1f; final interval: %d step(s), t = %.1f → %.1f\n",
+        n_int, t_start[1], t_end[end], i_end[end] - i_start[end], t_start[end], t_end[end])
+
 col_names = [nm for (nm, _, _) in col_bounds]
-G_cols    = Dict{String,Matrix{Float64}}()
+G_cols    = Dict{String,Matrix{Float64}}()   # full time resolution [nb, Nt]
 M_cols    = Dict{String,Matrix{Float64}}()
 Ψ_cols    = Dict{String,Matrix{Float64}}()
+G_int     = Dict{String,Matrix{Float64}}()   # per-interval budget [nb, n_int]
+Ψ_int     = Dict{String,Matrix{Float64}}()
+Gsurf_int = Dict{String,Matrix{Float64}}()
 dMdt_cols = Dict{String,Matrix{Float64}}()
 R_cols    = Dict{String,Matrix{Float64}}()
 
@@ -313,11 +396,20 @@ for (nm, xlo, xhi) in col_bounds
     ψ_in_left = -ψ_b[iL, :, :]
     ψ_in_right = -(-ψ_b[iR, :, :])
     Ψ_col = Float64.(ψ_in_left .+ ψ_in_right)
-    dMdt  = ddt_time(M_col, times)
-    R_col = dMdt .- G_col .- Ψ_col .- Float64.(Gsurf_cols[nm])
+
+    dMdt = interval_dMdt(M_col, i_start, i_end, times)
+    G_int[nm]     = interval_mean(G_col, i_start, i_end)
+    Ψ_int[nm]     = interval_mean(Ψ_col, i_start, i_end)
+    Gsurf_int[nm] = interval_mean(Float64.(Gsurf_cols[nm]), i_start, i_end)
+    R_col = dMdt .- G_int[nm] .- Ψ_int[nm] .- Gsurf_int[nm]
 
     G_cols[nm] = G_col;  M_cols[nm] = M_col;  Ψ_cols[nm] = Ψ_col
     dMdt_cols[nm] = dMdt;  R_cols[nm] = R_col
+
+    # telescoping sanity check: Σ_k dMdt_k·Δt_k must equal M[e_end] − M[s_1]
+    ΔM_sum = dMdt * (t_end .- t_start)
+    ΔM_tot = M_col[:, i_end[end]] .- M_col[:, i_start[1]]
+    @printf("  %-8s  telescoping max|err| = %.3e\n", nm, maximum(abs.(ΔM_sum .- ΔM_tot)))
 end
 
 # time-mean per region over the whole run
@@ -326,12 +418,20 @@ Gmix_region_mean = Dict(name => vec(nanmean(Gmix_regions[name], dims=2))
 
 # ---- save G_mix(b, t) per region to NetCDF ---------------------------------
 NCDataset(outfile, "c") do dsout
-    defDim(dsout, "b",    length(b_centers))
+    defDim(dsout, "b",      length(b_centers))
+    defDim(dsout, "b_edge", length(b_edges))
     defDim(dsout, "time", Nt)
     defDim(dsout, "x",    Nx)
+    defDim(dsout, "interval", n_int)
     defVar(dsout, "b",    collect(b_centers), ("b",))
+    # the axis may be non-uniform, so downstream must difference b_edges rather than
+    # assume a constant db
+    defVar(dsout, "b_edges", collect(b_edges), ("b_edge",))
     defVar(dsout, "time", times,             ("time",))
     defVar(dsout, "x",    Float64.(x),        ("x",))
+    defVar(dsout, "t_start", t_start, ("interval",))
+    defVar(dsout, "t_end",   t_end,   ("interval",))
+    defVar(dsout, "t_mid",   t_mid,   ("interval",))
     for name in region_names
         defVar(dsout, "Gmix_$(name)", Gmix_regions[name],        ("b", "time"))
         defVar(dsout, "M_$(name)",    Float32.(M_regions[name]), ("b", "time"))
@@ -341,12 +441,20 @@ NCDataset(outfile, "c") do dsout
         defVar(dsout, "Gsurf_$(nm)",    Float32.(Gsurf_cols[nm]), ("b", "time"))
         defVar(dsout, "Gmix_col_$(nm)", Float32.(G_cols[nm]),     ("b", "time"))
         defVar(dsout, "psi_col_$(nm)",  Float32.(Ψ_cols[nm]),     ("b", "time"))
-        defVar(dsout, "dMdt_$(nm)",     Float32.(dMdt_cols[nm]),  ("b", "time"))
-        defVar(dsout, "R_$(nm)",        Float32.(R_cols[nm]),     ("b", "time"))
+        # per-interval budget (Step 5): dMdt is the exact endpoint difference,
+        # the *_int terms are snapshot means over the same interval
+        defVar(dsout, "Gmix_int_$(nm)",  Float32.(G_int[nm]),      ("b", "interval"))
+        defVar(dsout, "psi_int_$(nm)",   Float32.(Ψ_int[nm]),      ("b", "interval"))
+        defVar(dsout, "Gsurf_int_$(nm)", Float32.(Gsurf_int[nm]),  ("b", "interval"))
+        defVar(dsout, "dMdt_$(nm)",      Float32.(dMdt_cols[nm]),  ("b", "interval"))
+        defVar(dsout, "R_$(nm)",         Float32.(R_cols[nm]),     ("b", "interval"))
     end
-    dsout.attrib["method"]   = "CODF interior G_mix + surface forcing G_surface; ∂M/∂t = G_mix + Ψ + G_surface"
+    dsout.attrib["method"]   = "CODF interior G_mix + surface forcing G_surface; interval budget ∂M/∂t = G_mix + Ψ + G_surface"
+    dsout.attrib["steps_per_interval"] = steps_per_interval
     dsout.attrib["Ra"]       = Ra
     dsout.attrib["segments"] = "$(first(segments))-$(last(segments))"
+    dsout.attrib["bin_mode"] = String(bin_mode)
+    bin_mode == :blended && (dsout.attrib["lambda"] = λ_bins)
 end
 println("saved → $outfile")
 
@@ -386,28 +494,29 @@ outpng2 = joinpath(plot_dir, "gmix_CODF_regions_tmean.png")
 save(outpng2, fig2)
 println("saved figure → $outpng2")
 
-# ---- Step 6: per-column volume budget (time-mean over last window) -----------
-bwin  = max(1, Nt-10):Nt
-tmean(A) = vec(nanmean(A[:, bwin], dims=2))
+# ---- Step 6: per-column volume budget (last interval) ------------------------
+kk = n_int   # which interval to report/plot (last one)
 
-@printf("\nper-column residual check (max|·| over b, time-mean last %d steps):\n", length(bwin))
+@printf("\nper-column residual check (max|·| over b, interval t = %.1f–%.1f):\n",
+        t_start[kk], t_end[kk])
 for nm in col_names
     @printf("  %-8s  max|R| = %.3e   max|G_mix| = %.3e   max|Ψ| = %.3e   max|Gsurf| = %.3e\n",
-            nm, maximum(abs, tmean(R_cols[nm])), maximum(abs, tmean(G_cols[nm])),
-            maximum(abs, tmean(Ψ_cols[nm])), maximum(abs, tmean(Gsurf_cols[nm])))
+            nm, maximum(abs, R_cols[nm][:, kk]), maximum(abs, G_int[nm][:, kk]),
+            maximum(abs, Ψ_int[nm][:, kk]), maximum(abs, Gsurf_int[nm][:, kk]))
 end
 
 function budget_figure(sel_b, fname, suffix)
     fig  = Figure(size=(300 * length(col_names), 560))
     axes = Axis[]
     for (i, nm) in enumerate(col_names)
-        ax = Axis(fig[1, i], xlabel="transport", ylabel="b", title="$nm$suffix")
+        ax = Axis(fig[1, i], xlabel="transport", ylabel="b",
+                  title=@sprintf("%s%s  t = %.0f–%.0f", nm, suffix, t_start[kk], t_end[kk]))
         push!(axes, ax);  i > 1 && hideydecorations!(ax; ticks=false, grid=false)
-        lines!(ax, tmean(G_cols[nm])[sel_b],    b_centers[sel_b], color=:seagreen,  linewidth=2, label="G_mix")
-        lines!(ax, tmean(Ψ_cols[nm])[sel_b],    b_centers[sel_b], color=:royalblue, linewidth=2, label="Ψ")
-        lines!(ax, tmean(Gsurf_cols[nm])[sel_b], b_centers[sel_b], color=:orange,   linewidth=2, label="G_surface")
-        lines!(ax, tmean(dMdt_cols[nm])[sel_b], b_centers[sel_b], color=:gray,      linewidth=1.5, linestyle=:dash, label="∂M/∂t")
-        lines!(ax, tmean(R_cols[nm])[sel_b],    b_centers[sel_b], color=:black,     linewidth=2, linestyle=:dot,  label="residual")
+        lines!(ax, G_int[nm][sel_b, kk],     b_centers[sel_b], color=:seagreen,  linewidth=2, label="G_mix")
+        lines!(ax, Ψ_int[nm][sel_b, kk],     b_centers[sel_b], color=:royalblue, linewidth=2, label="Ψ")
+        lines!(ax, Gsurf_int[nm][sel_b, kk], b_centers[sel_b], color=:orange,    linewidth=2, label="G_surface")
+        lines!(ax, dMdt_cols[nm][sel_b, kk], b_centers[sel_b], color=:gray,      linewidth=1.5, linestyle=:dash, label="∂M/∂t")
+        lines!(ax, R_cols[nm][sel_b, kk],    b_centers[sel_b], color=:black,     linewidth=2, linestyle=:dot,  label="residual")
         vlines!(ax, 0.0, color=:gray, linewidth=0.6)
     end
     linkyaxes!(axes...)

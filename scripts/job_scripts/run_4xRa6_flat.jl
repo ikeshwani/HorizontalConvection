@@ -1,4 +1,4 @@
-println(">>> starting run control case no hills: for Ra1e8 4x stretching segment 14,stoptime=330 <<<")
+println(">>> starting run control case no hills: for Ra1e6 4x stretching segment 14,stoptime=413 (55sec interval) <<<")
 
 using CUDA
 using Oceananigans
@@ -13,14 +13,14 @@ simulation = HorizontalConvectionSimulation(;
     α = 4.0,
     x_stretch = 4.0,   # 4x stretch
     z_stretch = 4.0,   # 4x stretch
-    stop_time = 330.0,
+    stop_time = 413.0,
 
     #topography parameters
     h₀_frac = 0.0, 
     numhill = 0, 
 
     #physics parameters
-    Ra = 1e8,
+    Ra = 1e6,
     Pr = 1.0, 
     b★ = 1.0, 
     advection = true, 

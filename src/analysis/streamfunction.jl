@@ -5,6 +5,11 @@
 #   - get_ψb_sort: ψ(x, b, t) in buoyancy space via a sort + cumsum sweep (fast)
 #   - get_ψb_mask: ψ(x, b, t) via per-bin boolean masking (slow reference method)
 #
+# Sign convention: ψ = -∫_{-H}^{z} (∫u dy) dz', cumulative from the bottom up.
+# Negative ψ ⇒ counterclockwise circulation.  For this setup the overturning
+# cell comes out negative (measured ≈ -0.004 for the Ra1e8 hill run), which is
+# the desired convention.  All three functions below share this one sign.
+#
 # Physics only — no plotting.
 
 using NCDatasets
@@ -47,10 +52,17 @@ end
 #   3. sweep a two-pointer through the sorted b array once to evaluate all
 #      bins in O(Ny·Nz + n_b_bins) rather than O(n_b_bins · Ny · Nz).
 #
+# `b_bins` may be passed explicitly to evaluate ψ on a non-uniform axis — the sweep
+# below only requires the bins to be sorted, not evenly spaced.  Pass it whenever the
+# caller has its own axis: deriving bins from (b_range, n_b_bins) instead would
+# silently return ψ on a *different* axis rather than erroring.
 function get_ψb_sort(b_all, u_all, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt;
-                     b_range=(-1.0, 1.0), n_b_bins=501)
+                     b_range=(-1.0, 1.0), n_b_bins=501, b_bins=nothing)
 
-    b_bins = collect(range(b_range[1], b_range[2], length=n_b_bins))
+    b_bins = b_bins === nothing ?
+             collect(range(b_range[1], b_range[2], length=n_b_bins)) : collect(b_bins)
+    issorted(b_bins) || throw(ArgumentError("b_bins must be sorted"))
+    n_b_bins = length(b_bins)
     W      = reshape(Δy_vec, Ny, 1) .* reshape(Δz_vec, 1, Nz)  # [Ny, Nz]
 
     ψ_b = zeros(Float32, Nx, n_b_bins, Nt)
@@ -90,9 +102,11 @@ end
 # check that the sort method gives the same answer.  Immersed cells carry u=0
 # and so contribute nothing, exactly as in the sort method (no wet mask needed).
 function get_ψb_mask(b_all, u_all, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt;
-                     b_range=(-1.0, 1.0), n_b_bins=501)
+                     b_range=(-1.0, 1.0), n_b_bins=501, b_bins=nothing)
 
-    b_bins = collect(range(b_range[1], b_range[2], length=n_b_bins))
+    b_bins = b_bins === nothing ?
+             collect(range(b_range[1], b_range[2], length=n_b_bins)) : collect(b_bins)
+    n_b_bins = length(b_bins)
     Δy4 = reshape(Δy_vec, 1, Ny, 1, 1)
     Δz3 = reshape(Δz_vec, 1, Nz, 1)
 

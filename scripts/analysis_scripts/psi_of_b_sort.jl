@@ -21,7 +21,7 @@ using NCDatasets
 using Printf
 
 # ---- config ----
-experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
+experiment = "hill"          # "control" (flat bottom) or "hill" (3-hill GRC)
 
 Ra_str   = "1e8"
 b_range  = (-1.0, 1.0)
@@ -29,12 +29,12 @@ n_b_bins = 501
 
 if experiment == "control"
     data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
-    segments = 1:15
+    segments = 1:16
     tag      = "Control"
     source   = "ra1e8_4xstretch_flat_baseforcing_zerostart"
 elseif experiment == "hill"
     data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
-    segments = 1:22
+    segments = 1:23
     tag      = "3hill"
     source   = "ra1e8_4xstretch_threehill_baseforcing_zerostart"
 else
@@ -45,7 +45,7 @@ outfile = joinpath(data_dir, "psi_b_$(tag)_RA1e8_seg$(first(segments))to$(last(s
 
 # ---- load grid info from seg1 ----
 println("loading grid info from seg1...")
-ds1    = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"))
+ds1    = NCDataset(joinpath(data_dir, "velocities_seg1.nc"))
 x      = ds1["x_caa"][:]
 y      = ds1["y_aca"][:]
 z      = ds1["z_aac"][:]
@@ -54,10 +54,17 @@ Nx, Ny, Nz = ds1.attrib["Nx"], ds1.attrib["Ny"], ds1.attrib["Nz"]
 Δz_vec = ds1["Δz_aac"][:]
 close(ds1)
 
-# ---- load segments, deduplicating overlapping time steps ----
-println("loading b and u from segments $(segments)...")
-b_segs    = Vector{Array{Float32,4}}()
-u_segs    = Vector{Array{Float32,4}}()
+# ---- stream segments: load one at a time, compute ψ, keep only small outputs ----
+#
+# ψ(x,b,t) and ψ(x,z,t) are computed independently per time step, so there is no
+# need to hold every segment's b/u in RAM at once (that OOM-killed the job).
+# Instead we load a single segment, reduce it to the (much smaller) ψ arrays,
+# free the big inputs, and only concatenate the compact per-segment results at
+# the end.  b_bins is deterministic, so we build it directly here.
+println("streaming segments $(segments): load → compute ψ → free...")
+b_bins    = collect(range(b_range[1], b_range[2], length=n_b_bins))
+ψb_segs   = Vector{Array{Float32,3}}()
+ψ_segs    = Vector{Array{Float32,3}}()
 time_segs = Vector{Vector{Float64}}()
 
 let t_last = -Inf
@@ -79,29 +86,34 @@ let t_last = -Inf
 
         n_v     = size(vfile["u"], 4)
         t_range = valid[1]:min(valid[end], n_v)
-        push!(b_segs,    Array(bfile["b"][:, :, :, t_range]))
-        push!(u_segs,    Array(vfile["u"][1:Nx, :, :, t_range]))
+
+        b_seg = Array(bfile["b"][:, :, :, t_range])
+        u_seg = Array(vfile["u"][1:Nx, :, :, t_range])
+        close(bfile); close(vfile)
+
+        Nt_seg = length(t_range)
+        ψb_seg, _ = get_ψb_sort(b_seg, u_seg, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt_seg;
+                                b_range=b_range, n_b_bins=n_b_bins)
+        ψ_seg     = get_ψ(u_seg, Δy_vec, Δz_vec, Nx, Nz, Nt_seg)
+
+        push!(ψb_segs,   ψb_seg)
+        push!(ψ_segs,    ψ_seg)
         push!(time_segs, t_seg[t_range])
 
+        b_seg = nothing; u_seg = nothing
+        GC.gc()
+
         t_last = t_seg[valid[end]]
-        close(bfile); close(vfile)
-        @printf("  seg %d: loaded %d steps (t = %.2f → %.2f)\n", s, length(t_range), t_seg[valid[1]], t_last)
+        @printf("  seg %d: %d steps (t = %.2f → %.2f) → ψ computed\n",
+                s, Nt_seg, t_seg[valid[1]], t_last)
     end
 end
 
-b_all = cat(b_segs...; dims=4)
-u_all = cat(u_segs...; dims=4)
-time  = vcat(time_segs...)
-Nt    = length(time)
+ψ_b  = cat(ψb_segs...; dims=3)
+ψ    = cat(ψ_segs...;  dims=3)
+time = vcat(time_segs...)
+Nt   = length(time)
 println("total time steps: $Nt  (t = $(time[1]) → $(time[end]))")
-
-# ---- compute (physics from src/) ----
-println("computing ψ(x, b, t) with sort method...")
-ψ_b, b_bins = get_ψb_sort(b_all, u_all, Δy_vec, Δz_vec, Nx, Ny, Nz, Nt;
-                           b_range=b_range, n_b_bins=n_b_bins)
-
-println("computing ψ(x, z, t)...")
-ψ = get_ψ(u_all, Δy_vec, Δz_vec, Nx, Nz, Nt)
 
 # ---- save ----
 println("saving to $outfile ...")

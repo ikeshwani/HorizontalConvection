@@ -12,11 +12,11 @@ Ra_str      = "RA1e8"       # label used in titles
 avg_window  = 10.0
 
 data_dir       = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/"
-psib_file      = joinpath(data_dir, "psi_b_t385.nc")
-gmix_file      = joinpath(data_dir, "Gmix_regions_v2_RA1e8_seg1to14.nc")
+psib_file      = joinpath(data_dir, "psi_b_3hill_RA1e8_seg1to23.nc")
+gmix_file      = joinpath(data_dir, "Gmix_regions_v2_3hill_RA1e8_seg1to23.nc")
 ctrl_data_dir  = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
-ctrl_psib_file = joinpath(ctrl_data_dir, "psi_b_Control_RA1e8_seg1to12.nc")
-ctrl_gmix_file = joinpath(ctrl_data_dir, "Gmix_regions_Control_RA1e8_seg1to12.nc")
+ctrl_psib_file = joinpath(ctrl_data_dir, "psi_b_Control_RA1e8_seg1to16.nc")
+ctrl_gmix_file = joinpath(ctrl_data_dir, "Gmix_regions_v2_Control_RA1e8_seg1to15.nc")
 plot_dir       = joinpath(data_dir, "figures")
 mkpath(plot_dir)
 
@@ -33,7 +33,7 @@ zBL = boundary_layer_depth(Lx, Ra)
 # shared t_end: anchor to control's last time so both
 # experiments average over the same physical window
 # =========================================================
-ds_ctrl_ref = NCDataset(ctrl_psib_file)
+ds_ctrl_ref = NCDataset(ctrl_gmix_file)
 t_end = Float64(ds_ctrl_ref["time"][end])
 close(ds_ctrl_ref)
 @printf("shared averaging window: t = %.1f → %.1f\n", t_end - avg_window, t_end)
@@ -44,10 +44,10 @@ close(ds_ctrl_ref)
 println("loading hill ψ(x, b) ...")
 ds_psi = NCDataset(psib_file)
 x_psi  = Float64.(ds_psi["x"][:])
-b_psi  = Float64.(ds_psi["b_out"][:])
+b_psi  = Float64.(ds_psi["b"][:])
 t_psi  = Float64.(ds_psi["time"][:])
-i_avg  = searchsortedfirst(t_psi, t_end - avg_window):length(t_psi)
-ψ_mean = dropdims(mean(Float64.(ds_psi["ψ_b"][:, :, i_avg]), dims=3), dims=3)  # [Nx, n_b]
+i_avg  = searchsortedfirst(t_psi, t_end - avg_window):searchsortedlast(t_psi, t_end)
+ψ_mean = dropdims(mean(Float64.(ds_psi["psi_b"][:, :, i_avg]), dims=3), dims=3)  # [Nx, n_b]
 close(ds_psi)
 @printf("  hill: averaged over %d steps  (t = %.1f → %.1f)\n", length(i_avg), t_psi[i_avg[1]], t_end)
 
@@ -59,7 +59,7 @@ ds_ctrl      = NCDataset(ctrl_psib_file)
 x_ctrl       = Float64.(ds_ctrl["x"][:])
 b_ctrl       = Float64.(ds_ctrl["b"][:])
 t_ctrl       = Float64.(ds_ctrl["time"][:])
-i_avg_ctrl   = searchsortedfirst(t_ctrl, t_end - avg_window):length(t_ctrl)
+i_avg_ctrl   = searchsortedfirst(t_ctrl, t_end - avg_window):searchsortedlast(t_ctrl, t_end)
 ψ_ctrl_mean  = dropdims(mean(Float64.(ds_ctrl["psi_b"][:, :, i_avg_ctrl]), dims=3), dims=3)  # [Nx, n_b]
 close(ds_ctrl)
 @printf("  control: averaged over %d steps  (t = %.1f → %.1f)\n",
@@ -72,7 +72,7 @@ println("loading G_mix by region ...")
 ds_g  = NCDataset(gmix_file)
 t_g   = Float64.(ds_g["time"][:])
 b_g   = Float64.(ds_g["b"][:])   # 499 inner bins matching b_psi[2:end-1]
-i_g   = searchsortedfirst(t_g, t_end - avg_window):length(t_g)
+i_g   = searchsortedfirst(t_g, t_end - avg_window):searchsortedlast(t_g, t_end)
 
 region_keys = ["Gmix_hill1", "Gmix_basin1", "Gmix_hill2",
                "Gmix_basin2", "Gmix_hill3", "Gmix_basin3"]
@@ -87,7 +87,7 @@ println("loading control G_mix by region ...")
 ds_gc    = NCDataset(ctrl_gmix_file)
 t_gc     = Float64.(ds_gc["time"][:])
 b_g_ctrl = Float64.(ds_gc["b"][:])
-i_gc     = searchsortedfirst(t_gc, t_end - avg_window):length(t_gc)
+i_gc     = searchsortedfirst(t_gc, t_end - avg_window):searchsortedlast(t_gc, t_end)
 gmix_ctrl_means = Dict(
     rk => dropdims(mean(Float64.(ds_gc[rk][:, i_gc]), dims=2), dims=2)
     for rk in region_keys

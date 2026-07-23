@@ -1,34 +1,44 @@
-# G_mix_sort_v2.jl
+# G_mix_flux_convergence.jl
 #
-# Regional G_mix(b,t) + overturning streamfunction via the PRODUCT-RULE
-# estimator (G_mix_calc_v2: decompose d²/db²[V(b)·χ̄(b)] = V·χ̄'' + 2·V'·χ̄' +
-# V''·χ̄).  This is a genuinely different estimator from the sorted-binning
-# method in G_mix_sort.jl and the two can disagree — both are kept on purpose.
+# Regional G_mix(b,t) + overturning streamfunction via the THIRD estimator:
+# convergence of the diffusive buoyancy flux (G_mix_calc_v3):
+#
+#     G_mix(b) = d/db ∫_{V(b'<b)} -∇·(-κ∇b) dV
+#
+# For each snapshot the per-cell flux convergence ∫_cell(-∇·F)dV is built once on
+# the full domain (diffusive_flux_convergence), then accumulated over V(b'<b)
+# within each region and differentiated once in b (G_mix_calc_v3).  This is a
+# genuinely different route from the sorted-binning (v1) and product-rule (v2)
+# estimators and the three can disagree — all are kept on purpose.
 #
 # Handles BOTH experiments — set `experiment` below:
 #   "control" : flat bottom (all cells wet)
 #   "hill"    : 3-hill GRC topography (wet mask from immersed boundary)
 #
+# Output format is IDENTICAL to G_mix_sort_v2.jl (save_gmix_regions): per-region
+# Gmix_<name>(b,t) + ψ(x,z,t), on the same b axis.  Only the filename tag (v3)
+# and the estimator differ.
+#
 # Memory-efficient two-pass loader: pass 1 scans only the time vectors, pass 2
-# loads one segment of field data at a time so the full b/χ/u arrays never sit
-# in memory at once.
+# loads one segment of field data at a time.
 #
-# Thin script: physics (gaussian_smooth, G_mix_calc_v2, region builders,
-# save_gmix_regions) lives in TopographicHorizontalConvection.
+# Thin script: physics (diffusive_flux_convergence, G_mix_calc_v3, region
+# builders, get_ψ, save_gmix_regions) lives in TopographicHorizontalConvection.
 #
-# Run from scripts/ with:  julia --project=../ analysis_scripts/G_mix_sort_v2.jl
+# Run from scripts/ with:  julia --project=../ analysis_scripts/G_mix_flux_convergence.jl
 
 using TopographicHorizontalConvection   # physics
 using NCDatasets
 using CairoMakie
 using Printf
 using Statistics
-using NaNStatistics
 
 # ---- config ----
-experiment = "hill"          # "control" (flat bottom) or "hill" (3-hill GRC)
+# experiment / Ra can be overridden from the environment (GMIX_EXPERIMENT, GMIX_RA)
+# so one submit script can launch both runs; defaults reproduce the hill Ra1e8 case.
+experiment = get(ENV, "GMIX_EXPERIMENT", "hill")   # "control" (flat) or "hill" (3-hill GRC)
 
-Ra       = 1e8                  # 1e8 or 1e6
+Ra       = parse(Float64, get(ENV, "GMIX_RA", "1e8"))   # 1e8 or 1e6
 b_range  = (-1, 1)
 n_b_bins = 501
 
@@ -44,11 +54,11 @@ end
 if experiment == "control"
     topo     = "flat"
     tag      = "Control"
-    segments = Ra == 1e8 ? (1:15) : (1:7)
+    segments = Ra == 1e8 ? (1:16) : (1:7)
 elseif experiment == "hill"
     topo     = "threehill"
     tag      = "3hill"
-    segments = Ra == 1e8 ? (1:23) : (1:10) #ill have to change this as the segments increase 
+    segments = Ra == 1e8 ? (1:23) : (1:10)
 else
     error("unknown experiment: $experiment (use \"control\" or \"hill\")")
 end
@@ -57,7 +67,7 @@ data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/$(Ra_ta
 plot_dir = joinpath(data_dir, "figures")   # figures live inside the run folder
 mkpath(plot_dir)
 
-outfile = joinpath(data_dir, "Gmix_regions_v2_$(tag)_$(Ra_str)_seg$(first(segments))to$(last(segments)).nc")
+outfile = joinpath(data_dir, "Gmix_regions_v3_$(tag)_$(Ra_str)_seg$(first(segments))to$(last(segments)).nc")
 
 # ---- load grid info from seg1 ----
 ds1    = NCDataset(joinpath(data_dir, "buoyancy_seg1.nc"))
@@ -66,27 +76,36 @@ y      = ds1["y_aca"][:]
 z      = ds1["z_aac"][:]
 Nx, Ny, Nz = ds1.attrib["Nx"], ds1.attrib["Ny"], ds1.attrib["Nz"]
 Lx     = ds1.attrib["Lx"]
-Δx_vec = ds1["Δx_caa"][:]
+Ra_a   = ds1.attrib["Ra"]
+Pr     = ds1.attrib["Pr"]
+b★     = ds1.attrib["b★"]
+H      = ds1.attrib["H"]
+
+Δx_vec = ds1["Δx_caa"][:]           # cell widths (centers)
 Δy_vec = ds1["Δy_aca"][:]
 Δz_vec = ds1["Δz_aac"][:]
+Δx_faa = ds1["Δx_faa"][:]           # center-to-center distances (faces)
+Δy_afa = ds1["Δy_afa"][:]
+Δz_aaf = ds1["Δz_aaf"][:]
 
 # wet mask: flat-bottom control is all wet; hills are b==0, so read the wet mask
 # from the second time step (avoids init zeros).
 wet = experiment == "hill" ? (Array(ds1["b"][:, :, :, 2]) .!= 0) : trues(Nx, Ny, Nz)
 close(ds1)
 
+# nondimensional diffusivity: ν = sqrt(Pr·b★·H³/Ra), κ = ν/Pr
+ν = sqrt(Pr * b★ * H^3 / Ra_a)
+κ = ν / Pr
+@printf("κ = %.3e   (Ra=%.0e, Pr=%g)\n", κ, Ra_a, Pr)
+
 Δx = reshape(Δx_vec, Nx, 1, 1)
 Δy = reshape(Δy_vec, 1, Ny, 1)
 Δz = reshape(Δz_vec, 1, 1, Nz)
-ΔV = Δx .* Δy .* Δz
 ΔA_2d = dropdims(Δx .* Δy, dims=3)
 
 # ---- region precompute (physics from src/) ----
 region_masks   = gmix_region_masks(x, z, Lx, Ra)
 region_precomp = precompute_regions(region_masks, ΔA_2d, wet)
-
-# ---- precompute time-invariant dV flat vector ----
-dV_flat = vec(ΔV)
 
 # ---- output b axis ----
 b_out = collect(range(b_range[1], b_range[2], length=n_b_bins))[2:end-1]
@@ -115,7 +134,7 @@ Gmix_regions = Dict(r.name => zeros(Float32, n_b, Nt) for r in region_precomp)
 ψ_all        = zeros(Float32, Nx, Nz, Nt)
 
 # ---- Pass 2: process one segment at a time ----
-println("Pass 2: computing G_mix + ψ segment by segment...")
+println("Pass 2: computing G_mix (flux-convergence) + ψ segment by segment...")
 
 let t_last = -Inf, t_offset = 0
 for s in segments
@@ -143,16 +162,19 @@ for s in segments
             s, nt, t_seg[t_range[1]], t_seg[t_range[end]])
 
     b_seg = Array(bfile["b"][:, :, :, t_range])
-    χ_seg = Array(bfile["chi"][:, :, :, t_range])
     u_seg = Array(vfile["u"][1:Nx, :, :, t_range])
     close(bfile); close(vfile)
 
     # ---- G_mix for each time step in this segment (physics from src/) ----
     for (ti, g) in enumerate(gi)
-        b_flat   = vec(b_seg[:, :, :, ti])
-        χdV_flat = vec(χ_seg[:, :, :, ti] .* ΔV)
+        b_snap   = b_seg[:, :, :, ti]
+        CV       = diffusive_flux_convergence(b_snap, wet, κ,
+                                              Δx_vec, Δy_vec, Δz_vec,
+                                              Δx_faa, Δy_afa, Δz_aaf)
+        b_flat   = vec(b_snap)
+        CV_flat  = vec(CV)
         for r in region_precomp
-            G = G_mix_calc_v2(b_flat[r.idxs], χdV_flat[r.idxs], dV_flat[r.idxs], b_range; n_b_bins)
+            G = G_mix_calc_v3(b_flat[r.idxs], CV_flat[r.idxs], b_range; n_b_bins)
             Gmix_regions[r.name][:, g] = G
         end
         g % 100 == 0 && @printf("    G_mix: step %d / %d\n", g, Nt)
@@ -165,7 +187,7 @@ for s in segments
     t_offset += nt
 
     # free segment arrays before loading the next segment
-    b_seg = nothing; χ_seg = nothing; u_seg = nothing
+    b_seg = nothing; u_seg = nothing
     GC.gc()
 
     @printf("  seg %d: done\n", s)
@@ -191,5 +213,5 @@ function plot_gmix_regions(b_out, time, Gmix_regions, region_precomp, plot_dir, 
     return fig
 end
 
-figname = "Gmix_density_regions_v2_$(tag)_$(Ra_str)_seg$(first(segments))to$(last(segments)).png"
+figname = "Gmix_density_regions_v3_$(tag)_$(Ra_str)_seg$(first(segments))to$(last(segments)).png"
 plot_gmix_regions(b_out, time, Gmix_regions, region_precomp, plot_dir, figname)

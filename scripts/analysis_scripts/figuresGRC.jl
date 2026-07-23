@@ -76,11 +76,6 @@ i_ψ     = i_start:length(time_ψ)
 close(ds_g)
 @printf("ψ: averaged over %d steps  (t = %.1f → %.1f)\n", length(i_ψ), time_ψ[i_start], t_end)
 
-# sign convention in the saved file is flipped for the 3-hill run
-if experiment == "3hill"
-    ψ_mean = -ψ_mean
-end
-
 # =========================================================
 # load b — y- and time-averaged over last avg_window time units
 # (loops segment files, deduplicating overlapping steps)
@@ -119,7 +114,7 @@ end   # [Nx, Nz]
 # buoyancy contour levels — log-spaced in magnitude
 # dense near ±b★, sparse near 0; avoids bunching in the interior
 # =========================================================
-b_levels = b★ .* [-0.7, -0.6, -0.5, -0.25, -0.22, -0.21, -0.2, -0.15, -0.1, 0.0, 0.1, 0.25, 0.5, 0.75, 1.0]
+b_levels = b★ .* [-0.25, -0.23, -0.22, -0.21, -0.2, -0.18, -0.17, -0.15, -0.1, 0.0, 0.1, 0.5, 0.75]
 
 # =========================================================
 # figure
@@ -138,7 +133,7 @@ ax  = Axis(fig[1, 1];
 )
 
 ψ_lim = 0.004   # hardcoded so both experiments share the same colorrange
-hm = heatmap!(ax, x, z, -ψ_mean; colormap=:balance, colorrange=(-ψ_lim, ψ_lim))
+hm = heatmap!(ax, x, z, ψ_mean; colormap=:balance, colorrange=(-ψ_lim, ψ_lim))
 Colorbar(fig[1, 2], hm; label="ψ", labelsize=18, ticklabelsize=14)
 
 # buoyancy contours — log-spaced levels
@@ -394,153 +389,153 @@ let
     println("saved → $outpath")
 end
 
-# =========================================================
-# Volume-averaged χ and ε by region: Plume / BL / Interior
-# Uses chi_mean and eps_mean already averaged over last avg_window τ
-# =========================================================
-let
-    # cell volumes [Nx, Nz]  (Δy factors cancel in volume-avg ratios)
-    ΔV  = Δx_vec .* Δz_vec'
+# # =========================================================
+# # Volume-averaged χ and ε by region: Plume / BL / Interior
+# # Uses chi_mean and eps_mean already averaged over last avg_window τ
+# # =========================================================
+# let
+#     # cell volumes [Nx, Nz]  (Δy factors cancel in volume-avg ratios)
+#     ΔV  = Δx_vec .* Δz_vec'
 
-    # wet mask from seafloor profile: cell (i,k) is fluid if z[k] > z_sf[i]
-    wet = [z[k] > z_sf[i] for i in 1:Nx, k in 1:Nz]
+#     # wet mask from seafloor profile: cell (i,k) is fluid if z[k] > z_sf[i]
+#     wet = [z[k] > z_sf[i] for i in 1:Nx, k in 1:Nz]
 
-    # 2D coordinate arrays [Nx, Nz]
-    X2d = repeat(x,  1,  Nz)
-    Z2d = repeat(z', Nx, 1)
+#     # 2D coordinate arrays [Nx, Nz]
+#     X2d = repeat(x,  1,  Nz)
+#     Z2d = repeat(z', Nx, 1)
 
-    mask_plume = X2d .< x_plume
-    mask_bl    = (Z2d .> zBL) .& (X2d .>= x_plume)
-    mask_int   = .!(mask_plume .| mask_bl)   # everything below BL excluding plume
+#     mask_plume = X2d .< x_plume
+#     mask_bl    = (Z2d .> zBL) .& (X2d .>= x_plume)
+#     mask_int   = .!(mask_plume .| mask_bl)   # everything below BL excluding plume
 
-    regions = [("Plume", mask_plume), ("Boundary Layer", mask_bl), ("Interior", mask_int)]
-    colors  = [:steelblue, :orangered, :seagreen]
+#     regions = [("Plume", mask_plume), ("Boundary Layer", mask_bl), ("Interior", mask_int)]
+#     colors  = [:steelblue, :orangered, :seagreen]
 
-    # domain-wide volume integrals of χ and ε (wet cells only)
-    chi_total = sum(chi_mean[wet] .* ΔV[wet])
-    eps_total = sum(eps_mean[wet] .* ΔV[wet])
+#     # domain-wide volume integrals of χ and ε (wet cells only)
+#     chi_total = sum(chi_mean[wet] .* ΔV[wet])
+#     eps_total = sum(eps_mean[wet] .* ΔV[wet])
 
-    chi_vol_avgs = Float64[]
-    eps_vol_avgs = Float64[]
-    chi_fracs    = Float64[]
-    eps_fracs    = Float64[]
-    rlabels      = String[]
+#     chi_vol_avgs = Float64[]
+#     eps_vol_avgs = Float64[]
+#     chi_fracs    = Float64[]
+#     eps_fracs    = Float64[]
+#     rlabels      = String[]
 
-    println("\nVolume-averaged χ and ε by region (last $(avg_window) τ):")
-    println("─"^70)
-    for (label, mask) in regions
-        m       = mask .& wet
-        V_r     = sum(ΔV[m])
-        chi_int = sum(chi_mean[m] .* ΔV[m])
-        eps_int = sum(eps_mean[m] .* ΔV[m])
-        push!(rlabels,      label)
-        push!(chi_vol_avgs, chi_int / V_r)
-        push!(eps_vol_avgs, eps_int / V_r)
-        push!(chi_fracs,    chi_int / chi_total)
-        push!(eps_fracs,    eps_int / eps_total)
-        @printf("%-20s  <χ> = %.3e  <ε> = %.3e  frac_χ = %.3f  frac_ε = %.3f\n",
-                label, chi_int/V_r, eps_int/V_r,
-                chi_int/chi_total, eps_int/eps_total)
-    end
+#     println("\nVolume-averaged χ and ε by region (last $(avg_window) τ):")
+#     println("─"^70)
+#     for (label, mask) in regions
+#         m       = mask .& wet
+#         V_r     = sum(ΔV[m])
+#         chi_int = sum(chi_mean[m] .* ΔV[m])
+#         eps_int = sum(eps_mean[m] .* ΔV[m])
+#         push!(rlabels,      label)
+#         push!(chi_vol_avgs, chi_int / V_r)
+#         push!(eps_vol_avgs, eps_int / V_r)
+#         push!(chi_fracs,    chi_int / chi_total)
+#         push!(eps_fracs,    eps_int / eps_total)
+#         @printf("%-20s  <χ> = %.3e  <ε> = %.3e  frac_χ = %.3f  frac_ε = %.3f\n",
+#                 label, chi_int/V_r, eps_int/V_r,
+#                 chi_int/chi_total, eps_int/eps_total)
+#     end
 
-    xs = 1:3
+#     xs = 1:3
 
-    fig = Figure(size=(900, 700))
+#     fig = Figure(size=(900, 700))
 
-    ax1 = Axis(fig[1, 1];
-        title  = "Volume-averaged χ  (last $(avg_window) τ)",
-        ylabel = "⟨χ⟩",
-        xticks = (xs, rlabels),
-        xticklabelrotation = π/6,
-    )
-    barplot!(ax1, xs, chi_vol_avgs; color=colors)
+#     ax1 = Axis(fig[1, 1];
+#         title  = "Volume-averaged χ  (last $(avg_window) τ)",
+#         ylabel = "⟨χ⟩",
+#         xticks = (xs, rlabels),
+#         xticklabelrotation = π/6,
+#     )
+#     barplot!(ax1, xs, chi_vol_avgs; color=colors)
 
-    ax2 = Axis(fig[1, 2];
-        title  = "Volume-averaged ε  (last $(avg_window) τ)",
-        ylabel = "⟨ε⟩",
-        xticks = (xs, rlabels),
-        xticklabelrotation = π/6,
-    )
-    barplot!(ax2, xs, eps_vol_avgs; color=colors)
+#     ax2 = Axis(fig[1, 2];
+#         title  = "Volume-averaged ε  (last $(avg_window) τ)",
+#         ylabel = "⟨ε⟩",
+#         xticks = (xs, rlabels),
+#         xticklabelrotation = π/6,
+#     )
+#     barplot!(ax2, xs, eps_vol_avgs; color=colors)
 
-    ax3 = Axis(fig[2, 1];
-        title  = "Fraction of total ∫χ dV",
-        ylabel = "fraction",
-        xticks = (xs, rlabels),
-        xticklabelrotation = π/6,
-        limits = (nothing, (0, 1)),
-    )
-    barplot!(ax3, xs, chi_fracs; color=colors)
+#     ax3 = Axis(fig[2, 1];
+#         title  = "Fraction of total ∫χ dV",
+#         ylabel = "fraction",
+#         xticks = (xs, rlabels),
+#         xticklabelrotation = π/6,
+#         limits = (nothing, (0, 1)),
+#     )
+#     barplot!(ax3, xs, chi_fracs; color=colors)
 
-    ax4 = Axis(fig[2, 2];
-        title  = "Fraction of total ∫ε dV",
-        ylabel = "fraction",
-        xticks = (xs, rlabels),
-        xticklabelrotation = π/6,
-        limits = (nothing, (0, 1)),
-    )
-    barplot!(ax4, xs, eps_fracs; color=colors)
+#     ax4 = Axis(fig[2, 2];
+#         title  = "Fraction of total ∫ε dV",
+#         ylabel = "fraction",
+#         xticks = (xs, rlabels),
+#         xticklabelrotation = π/6,
+#         limits = (nothing, (0, 1)),
+#     )
+#     barplot!(ax4, xs, eps_fracs; color=colors)
 
-    outpath = joinpath(plot_dir, "chi_eps_region_stats.png")
-    save(outpath, fig; px_per_unit=2)
-    println("saved → $outpath")
-end
+#     outpath = joinpath(plot_dir, "chi_eps_region_stats.png")
+#     save(outpath, fig; px_per_unit=2)
+#     println("saved → $outpath")
+# end
 
 # =========================================================
 # ψ(x, b) heatmap — Control vs 3-hill, shared time window
 # =========================================================
-let
-    ctrl_psib_file = joinpath(ctrl_data_dir, "psi_b_Control_RA1e8_seg1to12.nc")
-    hill_psib_file = joinpath(data_dir, "psi_b_t385.nc")
+# let
+#     ctrl_psib_file = joinpath(ctrl_data_dir, "psi_b_Control_RA1e8_seg1to12.nc")
+#     hill_psib_file = joinpath(data_dir, "psi_b_t385.nc")
 
-    ds_ctrl = NCDataset(ctrl_psib_file)
-    ds_hill = NCDataset(hill_psib_file)
+#     ds_ctrl = NCDataset(ctrl_psib_file)
+#     ds_hill = NCDataset(hill_psib_file)
 
-    t_ctrl = Float64.(ds_ctrl["time"][:])
-    t_hill = Float64.(ds_hill["time"][:])
+#     t_ctrl = Float64.(ds_ctrl["time"][:])
+#     t_hill = Float64.(ds_hill["time"][:])
 
-    t_avg_end   = t_end               # same anchor used for ψ/b/χ/ε contours above
-    t_avg_start = t_avg_end - avg_window
-    @printf("ψ(x,b): averaging over t = %.1f → %.1f\n", t_avg_start, t_avg_end)
+#     t_avg_end   = t_end               # same anchor used for ψ/b/χ/ε contours above
+#     t_avg_start = t_avg_end - avg_window
+#     @printf("ψ(x,b): averaging over t = %.1f → %.1f\n", t_avg_start, t_avg_end)
 
-    x_ctrl = Float64.(ds_ctrl["x"][:])
-    b_ctrl = Float64.(ds_ctrl["b"][:])
-    x_hill = Float64.(ds_hill["x"][:])
-    b_hill = Float64.(ds_hill["b_out"][:])
+#     x_ctrl = Float64.(ds_ctrl["x"][:])
+#     b_ctrl = Float64.(ds_ctrl["b"][:])
+#     x_hill = Float64.(ds_hill["x"][:])
+#     b_hill = Float64.(ds_hill["b_out"][:])
 
-    i_ctrl = searchsortedfirst(t_ctrl, t_avg_start):searchsortedlast(t_ctrl, t_avg_end)
-    i_hill = searchsortedfirst(t_hill, t_avg_start):searchsortedlast(t_hill, t_avg_end)
+#     i_ctrl = searchsortedfirst(t_ctrl, t_avg_start):searchsortedlast(t_ctrl, t_avg_end)
+#     i_hill = searchsortedfirst(t_hill, t_avg_start):searchsortedlast(t_hill, t_avg_end)
 
-    ψ_ctrl = dropdims(mean(Float32.(ds_ctrl["psi_b"][:, :, i_ctrl]), dims=3), dims=3)  # [Nx, Nb]
-    ψ_hill = dropdims(mean(Float32.(ds_hill["ψ_b"][:, :, i_hill]),  dims=3), dims=3)  # [Nx, Nb]
+#     ψ_ctrl = dropdims(mean(Float32.(ds_ctrl["psi_b"][:, :, i_ctrl]), dims=3), dims=3)  # [Nx, Nb]
+#     ψ_hill = dropdims(mean(Float32.(ds_hill["ψ_b"][:, :, i_hill]),  dims=3), dims=3)  # [Nx, Nb]
 
-    close(ds_ctrl); close(ds_hill)
-    @printf("ctrl: %d steps averaged,  hill: %d steps averaged\n", length(i_ctrl), length(i_hill))
+#     close(ds_ctrl); close(ds_hill)
+#     @printf("ctrl: %d steps averaged,  hill: %d steps averaged\n", length(i_ctrl), length(i_hill))
 
-    # shared symmetric colorrange
-    ψ_lim = max(maximum(abs.(ψ_ctrl)), maximum(abs.(ψ_hill)))
+#     # shared symmetric colorrange
+#     ψ_lim = max(maximum(abs.(ψ_ctrl)), maximum(abs.(ψ_hill)))
 
-    fig = Figure(size=(1400, 500))
+#     fig = Figure(size=(1400, 500))
 
-    ax1 = Axis(fig[1, 1];
-        xlabel = "x / H",
-        ylabel = "b",
-        title  = "Control — ⟨ψ(x,b)⟩  (t = $(t_avg_start) → $(t_avg_end))",
-        titlesize = 20,
-    )
-    hm = heatmap!(ax1, x_ctrl, b_ctrl, ψ_ctrl; colormap=:balance, colorrange=(-ψ_lim, ψ_lim))
+#     ax1 = Axis(fig[1, 1];
+#         xlabel = "x / H",
+#         ylabel = "b",
+#         title  = "Control — ⟨ψ(x,b)⟩  (t = $(t_avg_start) → $(t_avg_end))",
+#         titlesize = 20,
+#     )
+#     hm = heatmap!(ax1, x_ctrl, b_ctrl, ψ_ctrl; colormap=:balance, colorrange=(-ψ_lim, ψ_lim))
 
-    ax2 = Axis(fig[1, 2];
-        xlabel = "x / H",
-        ylabel = "b",
-        title  = "3-hill — ⟨ψ(x,b)⟩  (t = $(t_avg_start) → $(t_avg_end))",
-        titlesize = 20,
-    )
-    heatmap!(ax2, x_hill, b_hill, ψ_hill; colormap=:balance, colorrange=(-ψ_lim, ψ_lim))
+#     ax2 = Axis(fig[1, 2];
+#         xlabel = "x / H",
+#         ylabel = "b",
+#         title  = "3-hill — ⟨ψ(x,b)⟩  (t = $(t_avg_start) → $(t_avg_end))",
+#         titlesize = 20,
+#     )
+#     heatmap!(ax2, x_hill, b_hill, ψ_hill; colormap=:balance, colorrange=(-ψ_lim, ψ_lim))
 
-    Colorbar(fig[1, 3], hm; label="ψ(x, b)")
+#     Colorbar(fig[1, 3], hm; label="ψ(x, b)")
 
-    outpath = joinpath(plot_dir, "psi_b_heatmap_comparison.png")
-    save(outpath, fig; px_per_unit=2)
-    println("saved → $outpath")
-end
+#     outpath = joinpath(plot_dir, "psi_b_heatmap_comparison.png")
+#     save(outpath, fig; px_per_unit=2)
+#     println("saved → $outpath")
+# end

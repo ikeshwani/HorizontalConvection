@@ -753,7 +753,7 @@ function setup_output_writers!(simulation, domain, physics, forcing,
     pe = PotentialEnergy(model)
 
     # averaged buoyancy
-    b_avg_y = Field(Average(b, dims=(2)))
+    # b_avg_y = Field(Average(b, dims=(2)))
 
     # checkpointer
     simulation.output_writers[:checkpointer] = Checkpointer(
@@ -784,30 +784,30 @@ function setup_output_writers!(simulation, domain, physics, forcing,
         overwrite_existing = true
     )
 
-    #section section_snapshots
-    simulation.output_writers[:section_snapshots] = NetCDFWriter(
-        model, (; b, ke, pe);
-        filename = joinpath(project_dir, "section_snapshots_seg$(segment).nc"),
-        schedule = TimeInterval(10), #make time interval bigger for long run
-        indices = indices, 
-        with_halos = false, 
-        global_attributes = global_attributes, 
-        overwrite_existing = true
-    )
+    # #section section_snapshots
+    # simulation.output_writers[:section_snapshots] = NetCDFWriter(
+    #     model, (; b, ke, pe);
+    #     filename = joinpath(project_dir, "section_snapshots_seg$(segment).nc"),
+    #     schedule = TimeInterval(10), #make time interval bigger for long run
+    #     indices = indices, 
+    #     with_halos = false, 
+    #     global_attributes = global_attributes, 
+    #     overwrite_existing = true
+    # )
 
-    # Zonal time means
-    simulation.output_writers[:zonal_time_means] = NetCDFWriter(
-        model, (; b=b_avg_y);
-        filename = joinpath(project_dir, "zonal_time_means_seg$(segment).nc"),
-        schedule = AveragedTimeInterval(10, window=1), #make time interval larger for long run
-        with_halos = false, 
-        global_attributes = global_attributes, 
-        overwrite_existing = true
-    )
+    # # Zonal time means
+    # simulation.output_writers[:zonal_time_means] = NetCDFWriter(
+    #     model, (; b=b_avg_y);
+    #     filename = joinpath(project_dir, "zonal_time_means_seg$(segment).nc"),
+    #     schedule = AveragedTimeInterval(10, window=1), #make time interval larger for long run
+    #     with_halos = false, 
+    #     global_attributes = global_attributes, 
+    #     overwrite_existing = true
+    # )
 
     #oceanostics diagnostics 
     simulation.output_writers[:oceanostics] = NetCDFWriter(
-        model, (; ke, ε, χ);
+        model, (; ke, pe, ε, χ);
         filename = joinpath(project_dir, "oceanostics_seg$(segment).nc"), 
         schedule = TimeInterval(5), #make time interval larger for long
         indices = indices, 

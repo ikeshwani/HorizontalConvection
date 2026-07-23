@@ -23,7 +23,7 @@ using Observables
 using Printf
 
 # ---- config ----
-experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
+experiment = "hill"          # "control" (flat bottom) or "hill" (3-hill GRC)
 
 if experiment == "control"
     data_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
