@@ -38,11 +38,11 @@ end
 if experiment == "control"
     topo     = "flat"
     tag      = "Control"
-    segments = Ra == 1e8 ? (1:20) : (1:7)
+    segments = Ra == 1e8 ? (1:25) : (1:16)
 elseif experiment == "hill"
     topo     = "threehill"
     tag      = "3hill"
-    segments = Ra == 1e8 ? (1:26) : (1:10) #ill have to change this as the segments increase 
+    segments = Ra == 1e8 ? (1:32) : (1:19) #ill have to change this as the segments increase 
 else
     error("unknown experiment: $experiment (use \"control\" or \"hill\")")
 end

@@ -1,11 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name="gmix_hill_CODF"
-#SBATCH --partition=gpuA40x4
+#SBATCH --partition=cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
-#SBATCH --gpus-per-node=1                  #this is 0 if cpu run
-#SBATCH --account=bfxn-delta-gpu
+#SBATCH --account=bfxn-delta-cpu
 #SBATCH --mem=140G
 #SBATCH --time=12:00:00
 #SBATCH --output="/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_threehill_baseforcing_zerostart/logs/gmix_hill_CODF_%j.out"
