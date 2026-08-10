@@ -237,21 +237,25 @@ F_BN_col_fresh = Dict(n => F_BN_fresh["hill$n"] .+ F_BN_fresh["bl_hill$n"] for n
 F_BN_col_recon = Dict(n => F_BN_recon["hill$n"] .+ F_BN_recon["bl_hill$n"] for n in hills)
 b0_hill = Dict(n => min(b_min_region["hill$n"], b_min_region["bl_hill$n"]) for n in hills)
 
-# ---- upstream/downstream basin definition, per hill (Bryden & Nurser's own
-# two-reservoir picture).
-#   b0 := the exact buoyancy boundary below which the DOWNSTREAM basin has zero
-#         volume of its own -- the coldest buoyancy class that basin actually
-#         contains. By construction M_downstream(b) = 0 for every b <= b0, which
-#         IS the B&N invariant: a density that dense flowing into the hill cannot
-#         already be sitting downstream, so any transport there is a genuinely
-#         fresh crossing of the sill, not water that was already there.
-#   b1 := the b1_quantile volume quantile of that SAME downstream basin -- the
-#         bulk density that basin has actually filled up with after crossing.
-# (An earlier version picked b0 as a volume quantile of the UPSTREAM basin
-# instead. That's not equivalent: nothing in "upstream basin's own quantile"
-# constrains what's in the downstream basin, and checking it directly showed
-# 0.33-0.36% of the downstream basin's volume leaking through at that b0 for
-# hill1/hill3 -- a real violation of the B&N picture, not just noise.)
+# ---- upstream/downstream basin identification, per hill (Bryden & Nurser's
+# own two-reservoir picture).
+#   b0 := b0_hill (defined above) -- the hill's OWN coldest water, over its OWN
+#         control volume (hill$n + bl_hill$n). This is the only definition that
+#         satisfies BOTH required properties simultaneously:
+#           (1) M_downstream(b0) = 0 -- nothing that dense currently sits in the
+#               downstream basin (verified below), so any transport there is a
+#               genuinely fresh crossing, not water that was already there.
+#           (2) F_BN(b0) ~ 0 -- nothing in the HILL's OWN column is colder than
+#               b0 either (it's the hill's own extremum, by construction), so
+#               there's no leftover diffusive flux below it to contaminate the
+#               F_BN(b1)-F_BN(b0) difference used in Ψ_est.
+#         A basin-quantile-based b0 (an earlier version of this script) only
+#         ever satisfies (1), not (2) -- see the "does F_BN(b0) vanish" check
+#         that used to live here; F_BN(b0_up) came out up to 4.5% of max|F_BN|
+#         for hill1, since the hill's own column already holds water colder
+#         than any basin-side boundary.
+#   b1 := the b1_quantile volume quantile of the DOWNSTREAM basin -- the bulk
+#         density that basin has actually filled up with after crossing.
 function basin_M_col(nm)
     dropdims(nanmean(Float64.(ds_g["M_$(nm)"][:, time_idx_eq]) .+
                       Float64.(ds_g["M_bl_$(nm)"][:, time_idx_eq]), dims=2), dims=2)
@@ -275,7 +279,6 @@ end
 
 neighbors = Dict(1 => ("basin0", "basin1"), 2 => ("basin1", "basin2"), 3 => ("basin2", "basin3"))
 
-b0_up   = Dict{Int, Float64}()
 b1_down = Dict{Int, Float64}()
 nm_up   = Dict{Int, String}()
 nm_down = Dict{Int, String}()
@@ -291,22 +294,20 @@ for n in hills
     zs_right = zero_support(M_basin_cache[nm_right], b_centers)
     nm_up[n], nm_down[n] = zs_left < zs_right ? (nm_left, nm_right) : (nm_right, nm_left)
 
-    b0_up[n]   = zero_support(M_basin_cache[nm_down[n]], b_centers)
     b1_down[n] = volume_quantile(M_basin_cache[nm_down[n]], b_centers, b1_quantile)
 
-    @printf("hill%d: upstream = %s, downstream = %s  (b0 = %+.4f, b1 = %+.4f)\n",
-            n, nm_up[n], nm_down[n], b0_up[n], b1_down[n])
+    @printf("hill%d: upstream = %s, downstream = %s  (b0_hill = %+.4f, b1 = %+.4f)\n",
+            n, nm_up[n], nm_down[n], b0_hill[n], b1_down[n])
 end
 
-# ---- sanity check: does the downstream basin actually hold zero mass at b0_up? ----
-# should now read exactly 0.00% for every hill, by construction.
-println("\nsanity check: does b0_up exist in the downstream basin? (should be exactly 0%)")
+# ---- sanity check: does the downstream basin actually hold zero mass at b0_hill? ----
+println("\nsanity check: does b0_hill exist in the downstream basin? (should be ~0%)")
 for n in hills
     M_down = M_basin_cache[nm_down[n]]
-    ib0 = clamp(searchsortedfirst(b_centers, b0_up[n]), 1, length(b_centers))
+    ib0 = clamp(searchsortedfirst(b_centers, b0_hill[n]), 1, length(b_centers))
     frac_down = M_down[ib0] / M_down[end]
-    @printf("  hill%d  M_%s(b0_up=%.4f) = %.3e  (%.2f%% of %s's total volume)\n",
-            n, nm_down[n], b0_up[n], M_down[ib0], 100*frac_down, nm_down[n])
+    @printf("  hill%d  M_%s(b0_hill=%.4f) = %.3e  (%.2f%% of %s's total volume)\n",
+            n, nm_down[n], b0_hill[n], M_down[ib0], 100*frac_down, nm_down[n])
 end
 
 # ---- equilibrium-mean (x,z) buoyancy field, y-averaged, for the background heatmap ----
@@ -354,11 +355,11 @@ heatmap!(ax, x, z, dry_frac,
 lines!(ax, x, seafloor_nominal, color=:black, linestyle=:dash, linewidth=1.5,
        label="nominal profile (x-only, no channel)")
 
-contour!(ax, x, z, b_xz, levels=[b0_up[1]], color=:crimson, linewidth=2.5,
-         label="b0 (upstream, $(nm_up[1])) = $(round(b0_up[1], digits=3))")
+contour!(ax, x, z, b_xz, levels=[b0_hill[1]], color=:crimson, linewidth=2.5,
+         label="b0 (hill's own coldest water) = $(round(b0_hill[1], digits=3))")
 contour!(ax, x, z, b_xz, levels=[b1_down[1]], color=:dodgerblue, linewidth=2.5,
          label="b1 (downstream, $(nm_down[1])) = $(round(b1_down[1], digits=3))")
-axislegend(ax, position=:rb, merge=true)
+axislegend(ax, position=:rt, merge=true)
 
 xlims!(ax, x[1], x[end]); ylims!(ax, -H, 0)
 save(joinpath(plot_dir, "hill1_b0_b1_contours.png"), fig)
@@ -415,20 +416,18 @@ hmi = heatmap!(axi, x, z, ex.b2d, colormap=:balance, nan_color=:transparent)
 Colorbar(fig_inst[1, 2], hmi, label="b")
 band!(axi, x, fill(-H, Nx), seafloor_exact, color=(:gray30, 1.0))
 
-contour!(axi, x, z, ex.b2d, levels=[b0_hill[1]], color=:black, linewidth=2, linestyle=:dot,
-         label="old b0 (true min, this instant) = $(round(b0_hill[1], digits=3))")
-contour!(axi, x, z, ex.b2d, levels=[b0_up[1]], color=:crimson, linewidth=2.5,
-         label="b0 (upstream, $(nm_up[1])) = $(round(b0_up[1], digits=3))")
+contour!(axi, x, z, ex.b2d, levels=[b0_hill[1]], color=:crimson, linewidth=2.5,
+         label="b0 (hill's own coldest water) = $(round(b0_hill[1], digits=3))")
 contour!(axi, x, z, ex.b2d, levels=[b1_down[1]], color=:dodgerblue, linewidth=2.5,
          label="b1 (downstream, $(nm_down[1])) = $(round(b1_down[1], digits=3))")
-axislegend(axi, position=:rb, merge=true)
+axislegend(axi, position=:rt, merge=true)
 
 xlims!(axi, x[1], x[end]); ylims!(axi, -H, 0)
 save(joinpath(plot_dir, "hill1_instantaneous_snapshot.png"), fig_inst)
 fig_inst
 
 # ---- same instantaneous view, generalized to all 3 hills: the 6 chosen
-# contours (b0_up/b1_down per hill) side by side, each on its OWN hill's real,
+# contours (b0_hill/b1_down per hill) side by side, each on its OWN hill's real,
 # non-averaged snapshot (own segment/step/y-column, from b_min_slice) -- not a
 # shared/common instant, since each hill's true minimum occurs at its own time
 # and y. Real bottom_height topography at that exact y, same as the hill1 panel.
@@ -443,8 +442,8 @@ for (i, n) in enumerate(hills)
     hm_panels[i] = heatmap!(axn, x, z, ex_n.b2d, colormap=:balance, nan_color=:transparent, colorrange=(-0.5, 0.5))
     band!(axn, x, fill(-H, Nx), seafloor_n, color=(:gray30, 1.0))
 
-    contour!(axn, x, z, ex_n.b2d, levels=[b0_up[n]], color=:crimson, linewidth=2.5,
-             label="b0 (upstream, $(nm_up[n])) = $(round(b0_up[n], digits=3))")
+    contour!(axn, x, z, ex_n.b2d, levels=[b0_hill[n]], color=:crimson, linewidth=2.5,
+             label="b0 (hill's own coldest water) = $(round(b0_hill[n], digits=3))")
     contour!(axn, x, z, ex_n.b2d, levels=[b1_down[n]], color=:dodgerblue, linewidth=2.5,
              label="b1 (downstream, $(nm_down[n])) = $(round(b1_down[n], digits=3))")
     Legend(fig_inst_all[2, i], axn, labelsize=9)
@@ -454,6 +453,38 @@ Colorbar(fig_inst_all[1, 4], hm_panels[end], label="b")
 Label(fig_inst_all[0, :], "b0 (upstream) / b1 (downstream) contours, at each hill's own true-minimum instant", fontsize=14)
 save(joinpath(plot_dir, "hill_all_instantaneous_snapshots.png"), fig_inst_all)
 fig_inst_all
+
+# ---- same grid, but one row per b1_quantile choice (3%, 5%, 7.5%) -- lets you
+# see directly how much the b1 (dodgerblue) contour actually moves for the
+# sensitivity check above. b0 (crimson) doesn't change with b1_quantile at all
+# (zero_support doesn't depend on it), so only the blue contour shifts by row.
+q_list = (0.03, 0.05, 0.075)
+fig_qsens = Figure(size=(1500, 420 * length(q_list)))
+hm_qpanels = Vector{Any}(undef, length(hills))
+for (row, q) in enumerate(q_list)
+    for (i, n) in enumerate(hills)
+        ex_n = b0_hill_slice[n]
+        seafloor_n = bottom_height[:, ex_n.iy]
+        b1_q = volume_quantile(M_basin_cache[nm_down[n]], b_centers, q)
+
+        axn = Axis(fig_qsens[row, i], xlabel=(row == length(q_list) ? "x" : ""), ylabel=(i == 1 ? "z" : ""),
+                   title="hill$n, q=$(100*q)% (seg $(ex_n.s), step $(ex_n.ti), y=$(round(y[ex_n.iy], digits=3)))",
+                   titlesize=11)
+        hm_qpanels[i] = heatmap!(axn, x, z, ex_n.b2d, colormap=:balance, nan_color=:transparent, colorrange=(-0.5, 0.5))
+        band!(axn, x, fill(-H, Nx), seafloor_n, color=(:gray30, 1.0))
+
+        contour!(axn, x, z, ex_n.b2d, levels=[b0_hill[n]], color=:crimson, linewidth=2.5,
+                 label="b0 = $(round(b0_hill[n], digits=3))")
+        contour!(axn, x, z, ex_n.b2d, levels=[b1_q], color=:dodgerblue, linewidth=2.5,
+                 label="b1(q=$(100*q)%) = $(round(b1_q, digits=3))")
+        axislegend(axn, position=:rt, labelsize=8, merge=true)
+        xlims!(axn, x[1], x[end]); ylims!(axn, -H, 0)
+    end
+end
+Colorbar(fig_qsens[1:length(q_list), 4], hm_qpanels[end], label="b")
+Label(fig_qsens[0, :], "b0/b1 contours across b1_quantile choices (rows: q=3%, 5%, 7.5%; b0 fixed)", fontsize=14)
+save(joinpath(plot_dir, "hill_instantaneous_snapshots_quantile_sensitivity.png"), fig_qsens)
+fig_qsens
 
 # ---- Ψ(b): bulk (F_BN-derived) vs measured, as full curves rather than one
 # bulk (b0,b1)-secant number. Ψ_bulk(b) = -ΔF_BN/Δb taken at EVERY adjacent
@@ -491,18 +522,18 @@ lines!(axc, dMdt_hill1, b_centers, color=:darkorange, linewidth=1.5, linestyle=:
        label="∂M/∂t (non-steady-state)")
 lines!(axc, R_hill1, b_centers, color=:purple, linewidth=1.5, linestyle=:dash,
        label="R (budget residual)")
-hlines!(axc, [b0_up[1]], color=:gray40, linestyle=:dash, linewidth=1.2,
-        label="b0 (upstream, $(nm_up[1]), denser) = $(round(b0_up[1], digits=3))")
+hlines!(axc, [b0_hill[1]], color=:gray40, linestyle=:dash, linewidth=1.2,
+        label="b0 (hill's own coldest water, denser) = $(round(b0_hill[1], digits=3))")
 hlines!(axc, [b1_down[1]], color=:gray40, linestyle=:dashdot, linewidth=1.2,
         label="b1 (downstream, $(nm_down[1]), lighter) = $(round(b1_down[1], digits=3))")
 vlines!(axc, 0.0, color=:gray70, linestyle=:dot, linewidth=1)
 Legend(fig_curve[1,2], axc, labelsize=10)
-ylims!(axc, b0_up[1] - 0.04, b1_down[1] + 0.1)
+ylims!(axc, b0_hill[1] - 0.04, b1_down[1] + 0.1)
 save(joinpath(plot_dir, "hill1_psi_of_b_comparison.png"), fig_curve)
 fig_curve
 
 # quick numeric check over the b0->b1 range actually used by the bulk estimate
-let (lo, hi) = minmax(b0_up[1], b1_down[1])
+let (lo, hi) = minmax(b0_hill[1], b1_down[1])
     sel = findall(lo .<= b_centers .<= hi)
     @printf("\nhill1 offset decomposition, averaged over b in [%.3f, %.3f] (%d bins):\n",
             lo, hi, length(sel))
@@ -525,70 +556,23 @@ function interp_at(xs, ys, x0)
     return ys[i] + frac * (ys[i+1] - ys[i])
 end
 
-println("\nb0 (true zero-support buoyancy) per hill, and F_BN(b0) sanity check:")
+# ---- b0 sanity check: F_BN(b0_hill) ~ 0? ----
+# b0_hill is the hill's own true minimum, so by construction nothing in the
+# hill's own control volume is colder than it -- there's no diffusive flux
+# left below it to cross the isosurface, hence F_BN(b0_hill) should be ~0.
+println("\nb0 sanity check: F_BN(b0_hill) ~ 0?")
 for n in hills
     fbn0 = interp_at(b_edges, F_BN_col_fresh[n], b0_hill[n])
     scale = maximum(abs.(F_BN_col_fresh[n]))
-    @printf("  hill%d  b0 = %+.4f   F_BN(b0) = %+.3e   (%.2f%% of max|F_BN| = %.3e)\n",
-            n, b0_hill[n], fbn0, 100*abs(fbn0)/max(scale,1e-30), scale) 
-end
-
-# ---- determine downstream basin per hill from the actual flow, not x-position ----
-# A single-column ψ(x,b) reading (e.g. at the hill's peak) can land on a dry cell at
-# the hill's own dense b0 and read an exact, spurious 0 -- not evidence of "no flow."
-# Instead ask a direct, physically unambiguous question: which of the two neighboring
-# basins actually CONTAINS water as dense as this hill's own b0?  Only the upstream
-# source basin can (mass has to come from somewhere at least that dense); the
-# downstream basin, having already been warmed/mixed crossing the sill, cannot.
-neighbors = Dict(1 => ("basin0", "basin1"), 2 => ("basin1", "basin2"), 3 => ("basin2", "basin3"))
-
-M_col_basin_mean(nm) = dropdims(nanmean(Float64.(ds_g["M_$(nm)"][:, time_idx_eq]) .+
-                                         Float64.(ds_g["M_bl_$(nm)"][:, time_idx_eq]), dims=2), dims=2)
-
-downstream  = Dict{Int, String}()
-M_col_basin = Dict{String, Vector{Float64}}()   # cache so the b1 step below can reuse it
-println("\nflow-direction check per hill (which neighbor basin holds water as dense as b0):")
-for n in hills
-    nm_left, nm_right = neighbors[n]
-    haskey(M_col_basin, nm_left)  || (M_col_basin[nm_left]  = M_col_basin_mean(nm_left))
-    haskey(M_col_basin, nm_right) || (M_col_basin[nm_right] = M_col_basin_mean(nm_right))
-
-    ib0 = argmin(abs.(b_centers .- b0_hill[n]))
-    M_left_b0, M_right_b0 = M_col_basin[nm_left][ib0], M_col_basin[nm_right][ib0]
-
-    if M_left_b0 > M_right_b0
-        downstream[n] = nm_right
-        @printf("  hill%d  b0=%+.4f   M_%s(b0)=%.3e (source)   M_%s(b0)=%.3e  -> downstream = %s\n",
-                n, b0_hill[n], nm_left, M_left_b0, nm_right, M_right_b0, nm_right)
-    else
-        downstream[n] = nm_left
-        @printf("  hill%d  b0=%+.4f   M_%s(b0)=%.3e   M_%s(b0)=%.3e (source)  -> downstream = %s\n",
-                n, b0_hill[n], nm_left, M_left_b0, nm_right, M_right_b0, nm_left)
-    end
-end
-
-# ---- b1: 5-10% volume quantile of the downstream basin's own M_col(b) ----
-b1_hill = Dict{Int, Float64}()
-println("\nb1 (downstream-basin $(100*b1_quantile)% volume quantile) per hill:")
-for n in hills
-    basin = downstream[n]
-    M_col = M_col_basin[basin]
-    V_tot = M_col[end]
-    target = b1_quantile * V_tot
-    ib = searchsortedfirst(M_col, target)
-    ib = clamp(ib, 2, length(M_col))
-    frac = (target - M_col[ib-1]) / (M_col[ib] - M_col[ib-1])
-    b1 = b_centers[ib-1] + frac * (b_centers[ib] - b_centers[ib-1])
-    b1_hill[n] = b1
-    @printf("  hill%d  downstream = %-7s  V_tot = %.4e  target = %.4e  b1 = %+.4f\n",
-            n, basin, V_tot, target, b1)
+    @printf("  hill%d  b0_hill = %+.4f   F_BN(b0_hill) = %+.3e   (%.2f%% of max|F_BN| = %.3e)\n",
+            n, b0_hill[n], fbn0, 100*abs(fbn0)/max(scale,1e-30), scale)
 end
 
 # ---- Ψ_est: bulk F_BN-derived estimate, and Ψ_measured: direct from psi_int ----
 println("\nΨ_est (bulk, F_BN-derived) vs Ψ_measured (direct, from velocity field):")
 results = NamedTuple[]
 for n in hills
-    b0, b1 = b0_up[n], b1_down[n]
+    b0, b1 = b0_hill[n], b1_down[n]
     F0 = interp_at(b_edges, F_BN_col_fresh[n], b0)
     F1 = interp_at(b_edges, F_BN_col_fresh[n], b1)
     Ψ_est = -(F1 - F0) / (b1 - b0)
@@ -605,6 +589,32 @@ for n in hills
                      Ψ_est=Ψ_est, Ψ_measured=Ψ_measured, pct_diff=pct_diff, sign_match=sign_match))
     @printf("  hill%d  Ψ_est = %+.4e   Ψ_measured = %+.4e   %%diff = %+.1f%%   sign match: %s  (%d b-bins averaged)\n",
             n, Ψ_est, Ψ_measured, pct_diff, sign_match, length(b_sel))
+end
+
+# ---- sensitivity check: how much does b1_quantile actually matter? ----
+# b1_quantile=0.075 was a guess (stated "5-10%" range, no first-principles
+# derivation). Since b1 enters Ψ_est directly (in the (b1-b0) denominator),
+# check whether the conclusion (sign match, rough underestimate magnitude)
+# survives at smaller quantiles, or whether it's fragile to this choice.
+# b0 is untouched (it doesn't depend on b1_quantile at all -- it's b0_hill).
+println("\nsensitivity: Ψ_est vs Ψ_measured at other b1_quantile choices")
+for q in (0.03, 0.05, 0.075)
+    println("  q = $(100*q)%:")
+    for n in hills
+        b0 = b0_hill[n]
+        b1 = volume_quantile(M_basin_cache[nm_down[n]], b_centers, q)
+        F0 = interp_at(b_edges, F_BN_col_fresh[n], b0)
+        F1 = interp_at(b_edges, F_BN_col_fresh[n], b1)
+        Ψ_est = -(F1 - F0) / (b1 - b0)
+
+        psi_int = Float64.(ds_g["psi_int_hill$n"][:, end])
+        lo, hi = minmax(b0, b1)
+        b_sel = findall(lo .<= b_centers .<= hi)
+        Ψ_measured = nanmean(psi_int[b_sel])
+        pct_diff = 100 * (Ψ_est - Ψ_measured) / abs(Ψ_measured)
+        @printf("    hill%d  b1 = %+.4f   Ψ_est = %+.4e   Ψ_measured = %+.4e   %%diff = %+.1f%%\n",
+                n, b1, Ψ_est, Ψ_measured, pct_diff)
+    end
 end
 
 close(ds_g)

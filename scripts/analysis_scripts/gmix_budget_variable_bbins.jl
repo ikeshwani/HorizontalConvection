@@ -47,8 +47,6 @@ regions = [
     ("basin three", "basin3",  1.35,  x[end]),
 ]
 
-
-
 #this function takes in the dataset and the region of interest and creates a plot for the second to last interval
 function load_interval_case(ds_g, regiontitle, region_key, region_in, region_out)
     b = Float64.(ds_g["b"][:])
@@ -79,8 +77,8 @@ function load_interval_case(ds_g, regiontitle, region_key, region_in, region_out
     lines!(transport, b, color=:purple, linestyle=:dot, label=L"\text{transport in}")
     lines!(dMdt, b, color=:pink, label=L"\frac{dM}{dt}")
     lines!(R, b, color=:navyblue, label = L"\text{residual}", linestyle=:dash)
-    lines!(ψ_in_right, b, color=:red, label = L"\psi_{in, left}")
-    lines!(ψ_in_left, b, color=:dodgerblue, label = L"\psi_{in, right}")
+    lines!(ψ_in_right, b, color=:red, label = L"\psi_{in, right}")
+    lines!(ψ_in_left, b, color=:dodgerblue, label = L"\psi_{in, left}")
     Legend(fig[1,2], ax)
 
     save(joinpath(plot_dir_control, "gmix_budget_$(region_key)_intervalmean.png"), fig)

@@ -6,9 +6,9 @@ using Statistics
 using Printf
 
 # ---- config ----
-experiment = "control"          # "control" (flat bottom) or "hill" (3-hill GRC)
+experiment = "hill"          # "control" (flat bottom) or "hill" (3-hill GRC)
 
-Ra       = 1e8                  # 1e8 or 1e6
+Ra       = 1e6                  # 1e8 or 1e6
 b_range  = (-1, 1)              # only used when bin_mode = :uniform
 n_b_bins = 101                  # number of bin EDGES (→ n_b_bins-1 centers)
 
@@ -38,11 +38,11 @@ end
 if experiment == "control"
     topo     = "flat"
     tag      = "Control"
-    segments = Ra == 1e8 ? (1:25) : (1:16)
+    segments = Ra == 1e8 ? (1:28) : (1:19)
 elseif experiment == "hill"
     topo     = "threehill"
     tag      = "3hill"
-    segments = Ra == 1e8 ? (1:32) : (1:19) #ill have to change this as the segments increase 
+    segments = Ra == 1e8 ? (1:34) : (1:22) #ill have to change this as the segments increase 
 else
     error("unknown experiment: $experiment (use \"control\" or \"hill\")")
 end

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name="gmix_cont_quantile_CODF"
+#SBATCH --job-name="gmix_8fl_quantile_CODF"
 #SBATCH --partition=cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1

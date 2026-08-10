@@ -1,4 +1,4 @@
-println(">>> starting run case comparison to bryden and nurser topography : for Ra1e6 4x stretching segment 20,stoptime=650 (90sec interval)<<<")
+println(">>> starting run case comparison to bryden and nurser topography : for Ra1e6 4x stretching segment 22,stoptime=930 (150sec interval)<<<")
 
 using CUDA
 using Oceananigans
@@ -13,7 +13,7 @@ simulation = HorizontalConvectionSimulation(;
     α = 4.0,
     x_stretch = 4.0,   # 4x stretch
     z_stretch = 4.0,   # 4x stretch
-    stop_time = 650.0,
+    stop_time = 930.0,
 
     #topography parameters
     h₀_frac = 0.5, 
@@ -54,7 +54,7 @@ simulation = HorizontalConvectionSimulation(;
     #output parameters
     output_writer = true,
     output_dir = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/",
-    segment = 20, 
+    segment = 22, 
 
     #computational parameters
     architecture = GPU()
