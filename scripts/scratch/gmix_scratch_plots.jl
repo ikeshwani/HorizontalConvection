@@ -11,7 +11,7 @@ plot_dir       = joinpath(data_dir, "figures")
 mkpath(plot_dir)
 
 #gmix hilly
-gmix_file   = joinpath(data_dir, "Gmix_quantile_regions_CODF_3hill_RA1e8_seg1to32.nc")
+gmix_file   = joinpath(data_dir, "Gmix_quantile_regions_CODF_3hill_RA1e8_seg34_equilibrium_nbins401.nc")
 
 #gmix control experiment
 data_dir_control = "/work/hdd/bfxn/ikeshwani/HorizontalConvection/output/GPU/GRC/ra1e8_4xstretch_flat_baseforcing_zerostart/"
@@ -38,6 +38,49 @@ regions = [
 ]
 
 ds = NCDataset(gmix_file)
+
+function load_interval_case(ds_g, regiontitle, region_key, region_in, region_out)
+    b = Float64.(ds_g["b"][:])
+    Ra = ds_g.attrib["Ra"]
+
+    gmix = ds_g["Gmix_int_$region_key"][:, end-1]
+    gBF = ds_g["Gsurf_int_$region_key"][:, end-1]
+    transport = ds_g["psi_int_$region_key"][:, end-1]
+    dMdt = ds_g["dMdt_$region_key"][:, end-1]
+    R = ds_g["R_$region_key"][:, end-1]
+
+    time = ds_g["time"][:]
+    tstart = ds_g["t_start"][end-1]
+    tend = ds_g["t_end"][end-1]
+
+    index_tstart = nearest_xi(time, tstart)
+    index_tend = nearest_xi(time, tend)
+
+    index_in = nearest_xi(x, region_in)
+    index_out = nearest_xi(x, region_out)
+
+    ψ = nanmean(ds_g["psi_b"][:, :, index_tstart:index_tend], dims=3)[:, :]
+    ψ_in_left  = - ψ[index_in, :]
+    ψ_in_right = ψ[index_out, :]
+
+    fig = Figure(size=(600, 600))
+    ax = Axis(fig[1,1], xlabel = "transport and gmix", ylabel = "buoyancy", title = "$regiontitle volume budget for flat Ra=$Ra experiment from $tstart to $tend")
+    lines!(gmix .+ gBF, b, label=L"\mathcal{G}_{mix} + \mathcal{G}^{bf}", color=:green, linestyle=:dot)
+    lines!(transport, b, color=:purple, linestyle=:dot, label=L"\text{transport in}")
+    lines!(dMdt, b, color=:pink, label=L"\frac{dM}{dt}")
+    lines!(R, b, color=:navyblue, label = L"\text{residual}", linestyle=:dash)
+    lines!(ψ_in_right, b, color=:red, label = L"\psi_{in, right}")
+    lines!(ψ_in_left, b, color=:dodgerblue, label = L"\psi_{in, left}")
+    Legend(fig[1,2], ax)
+
+    save(joinpath(plot_dir, "gmix_budget_$(region_key)_intervalmean_401bins.png"), fig)
+
+    return fig, (; b, gmix, gBF, transport, dMdt, R, ψ_in_left, ψ_in_right)
+end
+
+for (i, (title, key, left, right)) in enumerate(regions)
+    case_int = load_interval_case(ds, title, key, left, right)
+end
 
 #Gmix hovmollers 
 col_names = ["basin0","hill1","basin1","hill2","basin2","hill3","basin3"]
